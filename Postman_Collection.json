@@ -1,0 +1,163 @@
+{
+  "info": {
+    "name": "MicroservicesDemo Local",
+    "_postman_id": "a1111111-b222-4333-8444-c55555555555",
+    "description": "Local testing collection for Patient, Booking, Enrolment services",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Create Patient",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "http://localhost:5001/api/patients",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "port": "5001",
+          "path": [
+            "api",
+            "patients"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\"fullName\": \"Alex Johnson\", \"dateOfBirth\": \"1999-03-14\", \"phone\": \"0400000000\", \"email\": \"alex@example.com\", \"citizenId\": \"CIT-12345\"}"
+        }
+      }
+    },
+    {
+      "name": "Get Patient By Id",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "http://localhost:5001/api/patients/1",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "port": "5001",
+          "path": [
+            "api",
+            "patients",
+            "1"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Create Booking",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "http://localhost:5002/api/bookings",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "port": "5002",
+          "path": [
+            "api",
+            "bookings"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\"patientId\": 1, \"testDateTime\": \"2025-10-05T10:00:00+10:00\"}"
+        }
+      }
+    },
+    {
+      "name": "Reschedule Booking",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "http://localhost:5002/api/bookings/1/reschedule",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "port": "5002",
+          "path": [
+            "api",
+            "bookings",
+            "1",
+            "reschedule"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "\"2025-10-06T09:30:00+10:00\""
+        }
+      }
+    },
+    {
+      "name": "Cancel Booking",
+      "request": {
+        "method": "PATCH",
+        "url": {
+          "raw": "http://localhost:5002/api/bookings/1/cancel",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "port": "5002",
+          "path": [
+            "api",
+            "bookings",
+            "1",
+            "cancel"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Create Enrolment",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "http://localhost:5003/api/enrolments",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "port": "5003",
+          "path": [
+            "api",
+            "enrolments"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\"studentId\": 1, \"courseCode\": \"CS101\"}"
+        }
+      }
+    }
+  ]
+}
