@@ -2,10 +2,11 @@ namespace backendServices.Model
 {
     public class User
     {
-        public required string firstName { get; set; }
-        public required string lastName { get; set; }
-        public required int age { get; set; }
-        public required string email { get; set; }
-        public required string password { get; set; }
+        public int id { get; set; }
+        public string firstName { get; set; } = "";
+        public string lastName { get; set; } = "";
+        public int age { get; set; }
+        public string email { get; set; } = "";
+        public string password { get; set; } = "";
     }
 }
