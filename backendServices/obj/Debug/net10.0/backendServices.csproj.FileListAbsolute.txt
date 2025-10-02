@@ -7,8 +7,13 @@ C:\Users\Ajay\Desktop\SOSEProject\backendServices\bin\Debug\net10.0\backendServi
 C:\Users\Ajay\Desktop\SOSEProject\backendServices\bin\Debug\net10.0\backendServices.dll
 C:\Users\Ajay\Desktop\SOSEProject\backendServices\bin\Debug\net10.0\backendServices.pdb
 C:\Users\Ajay\Desktop\SOSEProject\backendServices\bin\Debug\net10.0\Microsoft.AspNetCore.OpenApi.dll
+C:\Users\Ajay\Desktop\SOSEProject\backendServices\bin\Debug\net10.0\Microsoft.IdentityModel.Abstractions.dll
+C:\Users\Ajay\Desktop\SOSEProject\backendServices\bin\Debug\net10.0\Microsoft.IdentityModel.JsonWebTokens.dll
+C:\Users\Ajay\Desktop\SOSEProject\backendServices\bin\Debug\net10.0\Microsoft.IdentityModel.Logging.dll
+C:\Users\Ajay\Desktop\SOSEProject\backendServices\bin\Debug\net10.0\Microsoft.IdentityModel.Tokens.dll
 C:\Users\Ajay\Desktop\SOSEProject\backendServices\bin\Debug\net10.0\Microsoft.OpenApi.dll
 C:\Users\Ajay\Desktop\SOSEProject\backendServices\bin\Debug\net10.0\Npgsql.dll
+C:\Users\Ajay\Desktop\SOSEProject\backendServices\bin\Debug\net10.0\System.IdentityModel.Tokens.Jwt.dll
 C:\Users\Ajay\Desktop\SOSEProject\backendServices\obj\Debug\net10.0\backendServices.csproj.AssemblyReference.cache
 C:\Users\Ajay\Desktop\SOSEProject\backendServices\obj\Debug\net10.0\rpswa.dswa.cache.json
 C:\Users\Ajay\Desktop\SOSEProject\backendServices\obj\Debug\net10.0\backendServices.GeneratedMSBuildEditorConfig.editorconfig
