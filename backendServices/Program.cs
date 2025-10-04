@@ -2,7 +2,7 @@ using backendServices.AuthController;
 using Npgsql;
 
 var builder = WebApplication.CreateBuilder(args);
-var connectionString = "Host=localhost;Port=5432;Database=postgres;Username=postgres;Password=root;";
+var connectionString = builder.Configuration.GetConnectionString("Default");
 
 // Add services to the container.
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
