@@ -9,6 +9,9 @@ namespace backendServices.AuthController
     {
         public static ClaimsPrincipal ValidateJwtToken(string token)
         {
+            // 👇 VERY IMPORTANT: prevents .NET from renaming claim types
+            JwtSecurityTokenHandler.DefaultInboundClaimTypeMap.Clear();
+
             var tokenHandler = new JwtSecurityTokenHandler();
             var key = Encoding.UTF8.GetBytes("ServiceUniverseIsTheSecretString");
 
@@ -16,18 +19,14 @@ namespace backendServices.AuthController
             {
                 ValidateIssuerSigningKey = true,
                 IssuerSigningKey = new SymmetricSecurityKey(key),
-                ValidateIssuer = true,
-                ValidateAudience = true,
-                ValidIssuer = "serviceUniverse",
-                ValidAudience = "serviceUniverse",
+                ValidateIssuer = false,
+                ValidateAudience = false,
                 ClockSkew = TimeSpan.Zero
             };
 
-            SecurityToken validatedToken;
-            var principal = tokenHandler.ValidateToken(token, validationParameters, out validatedToken);
+            var principal = tokenHandler.ValidateToken(token, validationParameters, out _);
 
-            return principal; // contains claims (like userId, email, etc.)
+            return principal;
         }
-
     }
 }
