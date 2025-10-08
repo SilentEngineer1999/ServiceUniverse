@@ -1,0 +1,6 @@
+@PassBuy_HostAddress = http://localhost:5153
+
+GET {{PassBuy_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
