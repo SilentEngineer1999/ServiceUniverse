@@ -7,8 +7,7 @@ using System.Threading;
 var builder = WebApplication.CreateBuilder(args);
 
 // Users database
-builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseNpgsql("Host=db-utility;Port=5432;Database=usersdb;Username=postgres;Password=root"));
+var connectionString = builder.Configuration.GetConnectionString("Default");
 
 // HttpClient for Users microservice validation
 builder.Services.AddHttpClient();
