@@ -10,10 +10,6 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql("Host=db-utility;Port=5432;Database=usersdb;Username=postgres;Password=root"));
 
-// Utilities database
-builder.Services.AddDbContext<UtilityDbContext>(options =>
-    options.UseNpgsql("Host=db-utility;Port=5432;Database=postgres;Username=postgres;Password=root"));
-
 // HttpClient for Users microservice validation
 builder.Services.AddHttpClient();
 
