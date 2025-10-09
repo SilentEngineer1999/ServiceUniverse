@@ -10,12 +10,14 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
-      - "5432:5432"
+      - "5433:5432"
     networks:
       - micro_net
 
   backend:
-    build: .
+    build:
+      context: .
+      dockerfile: ./Dockerfile
     container_name: utility_backend
     depends_on:
       - db
