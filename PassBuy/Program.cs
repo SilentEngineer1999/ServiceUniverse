@@ -3,6 +3,11 @@ using PassBuy.Data;
 using Npgsql;
 using Microsoft.EntityFrameworkCore;
 using Npgsql.EntityFrameworkCore.PostgreSQL;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
+using System.Text;
+using PassBuy.Models;
+
 
 var builder = WebApplication.CreateBuilder(args);
 var connectionString = builder.Configuration.GetConnectionString("Default");
@@ -49,78 +54,32 @@ app.UseHttpsRedirection();
 PasswordManager passwordManager = new();
 
 // POST endpoint to insert a user
-app.MapPost("/signUp", async (string fname, string lname, int age, string email, string password) =>
+app.MapPost("/PassBuy/signUp", async (AppDbContext db, IConfiguration cfg,
+    string fname, string lname, string email, string password) =>
 {
     try
     {
+        var passwordManager = new PasswordManager();
         string hashPassword = passwordManager.HashPassword(password);
-        await using var conn = new NpgsqlConnection(connectionString);
-        await conn.OpenAsync();
 
-        var cmd = new NpgsqlCommand(
-            "INSERT INTO users (firstName, lastName, email, password) VALUES (@firstName, @lastName, @email, @password)", conn);
+        var user = new User
+        {
+            FirstName = fname,
+            LastName  = lname,
+            Email     = email,
+            Password  = hashPassword
+        };
 
-        cmd.Parameters.AddWithValue("firstName", fname);
-        cmd.Parameters.AddWithValue("lastName", lname);
-        cmd.Parameters.AddWithValue("email", email);
-        cmd.Parameters.AddWithValue("password", hashPassword);
+        db.Users.Add(user);
+        await db.SaveChangesAsync();  // automatically retrieves and populates user.Id
 
-        await cmd.ExecuteNonQueryAsync();
-
-        var jwt = JwtIssuer.Issue(newUserId, email, cfg);
-
-        // Return token (and maybe the user id)
-        return Results.Created($"/users/{newUserId}", new { token = jwt});
-
+        var jwt = JwtIssuer.Issue(user.Id, email, cfg);
+        return Results.Created($"/users/{user.Id}", new { token = jwt });
     }
     catch (Exception ex)
     {
         return Results.Problem(ex.Message);
     }
 });
-
-app.MapGet("/signIn", async (string email, string password) =>
-{
-    try
-    {
-        await using var conn = new NpgsqlConnection(connectionString);
-        await conn.OpenAsync();
-
-        var cmd = new NpgsqlCommand("SELECT id, firstName, lastName, email, password FROM users WHERE email = @Email", conn);
-        cmd.Parameters.AddWithValue("Email", email);
-        await using var reader = await cmd.ExecuteReaderAsync();
-
-        if (await reader.ReadAsync())
-        {
-            var user = new
-            {
-                Id = reader.GetInt32(reader.GetOrdinal("id")),
-                FirstName = reader.GetString(reader.GetOrdinal("firstName")),
-                LastName = reader.GetString(reader.GetOrdinal("lastName")),
-                Email = reader.GetString(reader.GetOrdinal("email")),
-                Password = reader.GetString(reader.GetOrdinal("password"))
-            };
-
-            bool passwordVerify = passwordManager.VerifyPassword(password, user.Password);
-            if (passwordVerify)
-            {
-                return Results.Ok("User Authenticated");
-            }
-            else
-            {
-                return Results.Json(new { message = "Incorrect Password" }, statusCode: 401);
-            }
-        }
-        else
-        {
-            return Results.NotFound("User not found");
-        }
-    }
-    catch (Exception ex)
-    {
-        return Results.Problem(ex.Message);
-    }
-})
-.WithName("SignIn");
 
 app.Run();

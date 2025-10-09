@@ -7,7 +7,7 @@ namespace PassBuy.Models
     {
         [Key]
         [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
-        public Guid AuthToken { get; set; } // A UUID
+        public Guid Id { get; set; } // a UUID
 
         [Required]
         public string FirstName { get; set; } = null!;

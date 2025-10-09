@@ -17,10 +17,10 @@ namespace PassBuy.Data   // <- ensure this matches your project/usage
             {
                 entity.ToTable("users");
 
-                entity.HasKey(u => u.AuthToken);
+                entity.HasKey(u => u.Id);
 
-                entity.Property(u => u.AuthToken)
-                      .HasColumnName("auth_token")
+                entity.Property(u => u.Id)
+                      .HasColumnName("Id")
                       .HasDefaultValueSql("uuid_generate_v4()")
                       .ValueGeneratedOnAdd();
 
