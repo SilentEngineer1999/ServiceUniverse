@@ -23,15 +23,15 @@ namespace PassBuy.AuthController
                 32
             );
 
-            return Convert.ToBase64String(hash);
+            return (Convert.ToBase64String(hash), salt); // store hash as Base64 string, salt as raw bytes
         }
 
         // used during login to verify password
-        public bool VerifyPassword(string password, string storedHash)
+        public bool VerifyPassword(string password, string storedHash, byte[] storedSalt)
         {
             byte[] hash = Rfc2898DeriveBytes.Pbkdf2(
                 Encoding.UTF8.GetBytes(password),
-                salt,
+                storedSalt,
                 100000,
                 HashAlgorithmName.SHA256,
                 32

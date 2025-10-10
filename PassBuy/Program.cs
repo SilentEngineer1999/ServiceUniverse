@@ -60,33 +60,57 @@ app.UseHttpsRedirection();
 
 PasswordManager passwordManager = new();
 
-// POST endpoint to insert a user
+// -------------------- SIGN UP --------------------
 app.MapPost("/PassBuy/signUp", async (AppDbContext db, IConfiguration cfg,
     string fname, string lname, string email, string password) =>
 {
     try
     {
-        var passwordManager = new PasswordManager();
-        string hashPassword = passwordManager.HashPassword(password);
+        var (hashPassword, salt) = passwordManager.HashPassword(password);
 
         var user = new User
         {
             FirstName = fname,
-            LastName  = lname,
-            Email     = email,
-            Password  = hashPassword
+            LastName = lname,
+            Email = email,
+            Password = hashPassword,
+            Salt = salt
         };
 
         db.Users.Add(user);
         await db.SaveChangesAsync();  // automatically retrieves and populates user.Id
 
-        var jwt = JwtIssuer.Issue(user.Id, email, cfg);
-        return Results.Created($"/users/{user.Id}", new { token = jwt });
+        var token = JwtIssuer.Issue(user.Id, email, cfg);
+        return Results.Created($"/users/{user.Id}", new
+        { message = "User created successfully.", token });
     }
     catch (Exception ex)
     {
         return Results.Problem(ex.Message);
     }
 });
+
+// -------------------- SIGN IN --------------------
+app.MapPost("/PassBuy/signIn", async (AppDbContext db, IConfiguration cfg, string email, string password) =>
+{
+    try
+    {
+        var user = await db.Users.FirstOrDefaultAsync(u => u.Email == email);
+        if (user == null)
+            return Results.NotFound("User not found");
+
+        bool passwordVerify = passwordManager.VerifyPassword(password, user.Password, user.Salt);
+        if (!passwordVerify)
+            return Results.Json(new { message = "Incorrect Password" }, statusCode: 401);
+
+        var token = JwtIssuer.Issue(user.Id, email, cfg);
+        return Results.Ok(new { message = "User Authenticated", token });
+    }
+    catch (Exception ex)
+    {
+        return Results.Problem(ex.Message);
+    }
+})
+.WithName("SignIn");
 
 app.Run();

@@ -20,5 +20,8 @@ namespace PassBuy.Models
 
         [Required]
         public string Email { get; set; } = null!;
+
+        [Required]
+        public byte[] Salt { get; set; } = null!;
     }
 }

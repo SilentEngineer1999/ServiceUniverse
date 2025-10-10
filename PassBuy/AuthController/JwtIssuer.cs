@@ -10,9 +10,6 @@ public static class JwtIssuer
     public static string Issue(Guid userId, string email, IConfiguration cfg)
     {
         var key     = cfg["Jwt:Key"] ?? throw new InvalidOperationException("Missing Jwt:Key");
-        var issuer  = cfg["Jwt:Issuer"]  ?? "PassBuy";
-        var audience= cfg["Jwt:Audience"]?? "PassBuyClients";
-        var expiryM = int.TryParse(cfg["Jwt:ExpiryMinutes"], out var m) ? m : 15;
 
         var creds = new SigningCredentials(
             new SymmetricSecurityKey(Encoding.UTF8.GetBytes(key)),
@@ -26,10 +23,10 @@ public static class JwtIssuer
         };
 
         var token = new JwtSecurityToken(
-            issuer: issuer,
-            audience: audience,
+            issuer: "serviceUniverse",
+            audience: "PassBuyClients",
             claims: claims,
-            expires: DateTime.UtcNow.AddMinutes(expiryM),
+            expires: DateTime.UtcNow.AddHours(1),
             signingCredentials: creds);
 
         return new JwtSecurityTokenHandler().WriteToken(token);
