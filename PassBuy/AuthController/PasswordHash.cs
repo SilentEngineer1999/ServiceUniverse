@@ -12,7 +12,7 @@ namespace PassBuy.AuthController
         private readonly byte[] salt = RandomNumberGenerator.GetBytes(16);
 
         //use during signup
-        public string HashPassword(string password)
+        public (string Hash, byte[] Salt) HashPassword(string password)
         {
             // Pbkdf2 for hashing
             byte[] hash = Rfc2898DeriveBytes.Pbkdf2(
