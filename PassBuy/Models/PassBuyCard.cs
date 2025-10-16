@@ -3,7 +3,7 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace PassBuy.Models
 {
-        public enum CardType
+    public enum CardType
     {
         Standard,
         EducationConcession,
@@ -12,7 +12,7 @@ namespace PassBuy.Models
         TransportEmployeeConcession
     }
 
-    public class Concession
+    public class PassBuyCard
     {
         [Key]
         public int Id { get; set; } = null!;

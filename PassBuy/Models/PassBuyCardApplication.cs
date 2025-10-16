@@ -3,8 +3,9 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace PassBuy.Models
 {
-    public enum ConcesionType
+    public enum CardType
     {
+        Standard,
         Education,
         Youth,
         Pensioner,
@@ -15,11 +16,11 @@ namespace PassBuy.Models
         [Key]
         public int Id { get; set; } = null!;
 
-        [ForeignKey("PassBuyCard")]
-        public PassBuyCard PassBuyCard { get; set; } = null!;
+        [ForeignKey("User")]
+        public User User { get; set; } = null!;
 
         [Required]
-        public ConcessionType ConcessionType { get; set; } = null!;
+        public CardType CardType { get; set; } = null!;
 
         public DateTime DateApplied { get; set; } = DateTime.UtcNow;
 
