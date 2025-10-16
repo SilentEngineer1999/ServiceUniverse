@@ -5,13 +5,16 @@ namespace PassBuy.Models
 {
     public class TransportEmploymentDetails
     {
-        [Key, ForeignKey("ConcessionApplication")] // PK = FK because the relationship is 1:1
-        public ConcessionApplication ConcessionApplication { get; set; } = null!;
+        [Key]
+        public int Id { get; set; }
+
+        [ForeignKey("PassBuyCardApplication")]
+        public int ApplicationId { get; set; }
 
         [ForeignKey("TransportEmployer")]
-        public TransportEmployer TransportEmployer { get; set; } = null!;
+        public Guid TransportEmployerId { get; set; }
 
         [Required]
-        public int EmployeeNumber { get; set; } = null!;
+        public int EmployeeNumber { get; set; }
     }
 }

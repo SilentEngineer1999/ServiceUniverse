@@ -6,21 +6,21 @@ namespace PassBuy.Models
     public enum CardType
     {
         Standard,
-        Education,
-        Youth,
-        Pensioner,
-        TransportEmployee
+        EducationConcession,
+        YouthConcession,
+        PensionerConcession,
+        TransportEmployeeConcession
     }
-    public class ConcessionApplication
+    public class PassBuyCardApplication
     {
         [Key]
-        public int Id { get; set; } = null!;
+        public int Id { get; set; }
 
         [ForeignKey("User")]
-        public User User { get; set; } = null!;
+        public Guid UserId { get; set; }
 
         [Required]
-        public CardType CardType { get; set; } = null!;
+        public CardType CardType { get; set; }
 
         public DateTime DateApplied { get; set; } = DateTime.UtcNow;
 
@@ -31,7 +31,6 @@ namespace PassBuy.Models
         // For Youth and Pensioner Concession: GovIDDetails
         // For TransportEmployee: TransportEmployer Details
         // Providing details that do not match with the concession type is disallowed
-        [ForeignKey("EducationDetails")]
         public EducationDetails? EducationDetails { get; set; }
 
         public GovIdDetails? GovIdDetails { get; set; }
@@ -42,16 +41,16 @@ namespace PassBuy.Models
         public void Validate()
         {
             // Disallow adding details that do not match with the Concession Type
-            if (ConcessionType != ConcessionType.Education && EducationDetails != null)
+            if (CardType != CardType.EducationConcession && EducationDetails != null)
                 throw new InvalidOperationException(
                     "EducationDetails have been provided, or are present in the table, " +
                     "but the ConcessionType is not Education.");
-            if ((ConcessionType != ConcessionType.Youth || ConcessionType == ConcessionType.Pensioner)
+            if ((CardType != CardType.YouthConcession || CardType == CardType.PensionerConcession)
                 && GovIdDetails != null)
                 throw new InvalidOperationException(
                     "GovIDDetails have been provided, or are present in the table, " +
                     "but the ConcessionType is not Youth or Pensioner.");
-            if (ConcessionType != ConcessionType.TransportEmployee && TransportEmployeeDetails != null)
+            if (CardType != CardType.TransportEmployeeConcession && TransportEmploymentDetails != null)
                 throw new InvalidOperationException(
                     "TransportEmployeeDetails have been provided, or are present in the table, " +
                     "but the ConcessionType is not Transport Employee.");

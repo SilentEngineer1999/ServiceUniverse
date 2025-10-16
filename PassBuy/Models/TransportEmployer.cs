@@ -6,7 +6,7 @@ namespace PassBuy.Models
     public class TransportEmployer
     {
         [Key]
-        public Guid Id { get; set; } = null!;
+        public Guid Id { get; set; }
 
         [Required]
         public string Name { get; set; } = null!;

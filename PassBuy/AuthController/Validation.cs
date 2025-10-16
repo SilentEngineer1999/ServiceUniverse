@@ -1,7 +1,7 @@
 using Microsoft.AspNetCore.Http;
 using System.Security.Claims;
 
-namespace backendServices.AuthController
+namespace PassBuy.AuthController
 {
     public static class JwtValidator
     {

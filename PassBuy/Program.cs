@@ -1,8 +1,7 @@
 using PassBuy.AuthController;
 using PassBuy.Data;
-using Npgsql;
 using Microsoft.EntityFrameworkCore;
-using Npgsql.EntityFrameworkCore.PostgreSQL;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
@@ -144,39 +143,60 @@ app.MapPost("/PassBuy/newCard/standard", async (AppDbContext db, HttpContext con
 
     try
     {
-        var newCard = { userId = userId, CardType = 0 };
+        var newCard = new PassBuyCardApplication { UserId = userId.Value, CardType = CardType.Standard };
         db.PassBuyCardApplication.Add(newCard);
+        await db.SaveChangesAsync();
     }
-}
+    catch (Exception ex)
+    {
+        return Results.Problem(ex.Message);
+    }
+})
+.WithName("newCard/standard");
 
 app.MapPost("/PassBuy/newCard/education", async (AppDbContext db, HttpContext context, IHttpClientFactory httpClientFactory,
-            Guid universityId, int stuNum, string courseCode, string courseTitle )) =>
+            Guid universityId, int stuNum, string courseCode, string courseTitle ) =>
 {
     var userId = await JwtValidator.ValidateJwtWithUsersService(context, httpClientFactory);
     if (userId == null) return Results.Unauthorized();
 
     try
     {
-        var newCard = { User = userId, CardType = 1 };
+        var newCard = new PassBuyCardApplication { UserID = userId.Value, CardType = CardType.EducationConcession };
 
-        var educationProvider = await db.EducationProviders
+        var provider = await db.EducationProviders
             .FirstOrDefaultAsync(e => e.Id == universityId);
 
-        var eduDetails = {
-            educationProvider = educationProvider,
-            studentNumber = stuNum,
-            courseCode = courseCode,
-            courseTitle = courseTitle
-            }
-        newCard.user = userId;
-        db.PassBuyCardApplication.Add();
-    }
-}
+        var eduDetails = new EducationDetails
+        {
+            PassBuyApplication = newCard,
+            EducationProvider = provider.Id,
+            StudentNumber = stuNum,
+            CourseCode = courseCode,
+            CourseTitle = courseTitle
+        };
 
-app,MapPost("/PassBuy/checkout", async (AppDbContext db, HttpContext context, IHttpClientFactory httpClientFactory,
-            string bankCard, int startingBalance, string mailAddress)) =>
-{
+        // Add education details to the card
+        newCard.EducationDetails = eduDetails;
+
+        // Adding newCard adds EducationDetails to the database as well
+        db.PassBuyCardApplication.Add(newCard);
+        await db.SaveChangesAsync();
+
+        return Results.Ok(new { message = "New PassBuy Concession Application submitted. Class: Education"});
+    }
+    catch (Exception ex)
+    {
+        return Results.Problem(ex.Message);
+    }
+})
+.WithName("newCard/education");
+
+
+// app,MapPost("/PassBuy/checkout", async (AppDbContext db, HttpContext context, IHttpClientFactory httpClientFactory,
+//             string bankCard, int startingBalance, string mailAddress)) =>
+// {
     
-}
+// }
 
 app.Run();

@@ -5,10 +5,13 @@ namespace PassBuy.Models
 {
     public class GovIdDetails
     {
-        [Key, ForeignKey("ConcessionApplication")] // PK = FK because the relationship is 1:1
-        public ConcessionApplication ConcessionApplication { get; set; } = null!;
+        [Key]
+        public int Id { get; set; }
+
+        [ForeignKey("PassBuyCardApplication")]
+        public int ApplicationId { get; set; }
 
         [Required]
-        public DateTime BirthDate { get; set; } = null!;
+        public DateTime BirthDate { get; set; }
     }
 }

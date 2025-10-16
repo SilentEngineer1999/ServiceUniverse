@@ -6,7 +6,7 @@ namespace PassBuy.Models
     public class EducationProvider
     {
         [Key]
-        public Guid Id { get; set; } = null!;
+        public Guid Id { get; set; }
 
         [Required]
         public string EduCode { get; set; } = null!;
