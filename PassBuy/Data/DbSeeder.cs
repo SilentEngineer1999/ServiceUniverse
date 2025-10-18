@@ -1,3 +1,4 @@
+using System.Data.Common;
 using PassBuy.Models;
 
 namespace PassBuy.Data
@@ -12,7 +13,7 @@ namespace PassBuy.Data
                 return;
             }
 
-            Console.WriteLine("🌱 Seeding default education providers...");
+            Console.WriteLine("Seeding default education providers...");
 
             var defaultProviders = new List<EducationProvider>
             {
@@ -34,6 +35,28 @@ namespace PassBuy.Data
             db.SaveChanges();
 
             Console.WriteLine("Default education providers seeded.");
+        }
+
+        public static void SeedTransportEmployers(AppDbContext db)
+        {
+            if (db.TransportEmployers.Any())
+            {
+                Console.WriteLine("Transport Employers already exist, skipping seed.");
+                return;
+            }
+
+            Console.WriteLine("Seeding default transport employers...");
+
+            var defaultEmployers = new List<TransportEmployer>
+            {
+                new() { Id = Guid.NewGuid(), Name = "State Buses" },
+                new() { Id = Guid.NewGuid(), Name = "State Trains" },
+                new() { Id = Guid.NewGuid(), Name = "State Ferries" },
+                new() { Id = Guid.NewGuid(), Name = "Transit Systems" },
+                new() { Id = Guid.NewGuid(), Name = "BusWays" },
+                new() { Id = Guid.NewGuid(), Name = "Veolia" },
+                new() { Id = Guid.NewGuid(), Name = "MTR Corp" }
+            };
         }
     }
 }

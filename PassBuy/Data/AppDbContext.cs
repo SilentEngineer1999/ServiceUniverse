@@ -12,7 +12,6 @@ public class AppDbContext : DbContext
     public DbSet<PassBuyCardApplication> PassBuyCardApplications => Set<PassBuyCardApplication>();
     public DbSet<EducationProvider> EducationProviders => Set<EducationProvider>();
     public DbSet<EducationDetails> EducationDetails => Set<EducationDetails>();
-    public DbSet<GovIdDetails> GovIdDetails => Set<GovIdDetails>();
     public DbSet<TransportEmployer> TransportEmployers => Set<TransportEmployer>();
     public DbSet<TransportEmploymentDetails> TransportEmploymentDetails => Set<TransportEmploymentDetails>();
 
@@ -29,12 +28,6 @@ public class AppDbContext : DbContext
             .HasOne<PassBuyCardApplication>()
             .WithOne(a => a.EducationDetails)
             .HasForeignKey<EducationDetails>(d => d.ApplicationId)
-            .IsRequired(false);
-
-        model.Entity<GovIdDetails>()
-            .HasOne<PassBuyCardApplication>()
-            .WithOne(a => a.GovIdDetails)
-            .HasForeignKey<GovIdDetails>(g => g.ApplicationId)
             .IsRequired(false);
 
         model.Entity<TransportEmploymentDetails>()

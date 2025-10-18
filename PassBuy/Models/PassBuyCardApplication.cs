@@ -33,8 +33,6 @@ namespace PassBuy.Models
         // Providing details that do not match with the concession type is disallowed
         public EducationDetails? EducationDetails { get; set; }
 
-        public GovIdDetails? GovIdDetails { get; set; }
-
         public TransportEmploymentDetails? TransportEmploymentDetails { get; set; }
 
         // Add conditions
@@ -45,11 +43,6 @@ namespace PassBuy.Models
                 throw new InvalidOperationException(
                     "EducationDetails have been provided, or are present in the table, " +
                     "but the ConcessionType is not Education.");
-            if ((CardType != CardType.YouthConcession || CardType == CardType.PensionerConcession)
-                && GovIdDetails != null)
-                throw new InvalidOperationException(
-                    "GovIDDetails have been provided, or are present in the table, " +
-                    "but the ConcessionType is not Youth or Pensioner.");
             if (CardType != CardType.TransportEmployeeConcession && TransportEmploymentDetails != null)
                 throw new InvalidOperationException(
                     "TransportEmployeeDetails have been provided, or are present in the table, " +
