@@ -44,10 +44,13 @@ builder.Services.AddOpenApi();
 
 var app = builder.Build();
 
-// Ensure DB + tables exist
+// Database pre-processing
 using (var scope = app.Services.CreateScope())
 {
+    // Get the database as a parameter for this scope
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+    // Flag to check if database connected
     bool success = false;
 
     // Try 10 times to apply migrations if there are any
@@ -69,11 +72,19 @@ using (var scope = app.Services.CreateScope())
     }
 
     // If it didn't manage to connect after the loop, raise a warning (but it will still run)
-    if (!success) {
+    if (!success)
+    {
         Console.ForegroundColor = ConsoleColor.Yellow;
         Console.WriteLine("Database failed to connect. No migrations have been applied." +
             "If Migrations exist, please restart the server.");
         Console.ResetColor();
+    }
+    
+    // If the migrations were successful, seed the database with education providers
+    else
+    {
+        var seeder = new DbSeeder(db);
+        seeder.SeedEducationProviders();
     }
 }
 
@@ -155,11 +166,16 @@ app.MapPost("/PassBuy/newCard/standard", async (AppDbContext db, HttpContext con
 
     try
     {
-        var newCard = new PassBuyCardApplication { UserId = userId.Value, CardType = CardType.Standard };
+        var newCard = new PassBuyCardApplication {
+            UserId = userId.Value,
+            CardType = CardType.Standard
+        };
         db.PassBuyCardApplications.Add(newCard);
         await db.SaveChangesAsync();
 
-        return Results.Ok(new { message = "New PassBuy Concession Application submitted. Class: Standard"});
+        return Results.Created(
+            new { message = "New PassBuy Concession Application submitted. Class: Standard" }
+            );
     }
     catch (Exception ex)
     {
@@ -169,7 +185,7 @@ app.MapPost("/PassBuy/newCard/standard", async (AppDbContext db, HttpContext con
 .WithName("newCard/standard");
 
 app.MapPost("/PassBuy/newCard/education", async (AppDbContext db, HttpContext context, IHttpClientFactory httpClientFactory,
-            Guid universityId, int stuNum, int courseCode, string courseTitle ) =>
+            string eduCode, int stuNum, int courseCode, string courseTitle ) =>
 {
     var userId = await JwtValidator.ValidateJwtWithUsersService(context, httpClientFactory);
     if (userId == null) return Results.Unauthorized();
@@ -179,13 +195,15 @@ app.MapPost("/PassBuy/newCard/education", async (AppDbContext db, HttpContext co
 
     try
     {
-        var newCard = new PassBuyCardApplication { UserId = userId.Value, CardType = CardType.EducationConcession };
+        var newCard = new PassBuyCardApplication {
+            UserId = userId.Value,
+            CardType = CardType.EducationConcession
+        };
         await db.SaveChangesAsync();
 
         // Find education provider
-        var provider = await db.EducationProviders
-            .FirstOrDefaultAsync(e => e.Id == universityId);
-        if (provider is null) return Results.NotFound("University not found");
+        var provider = await db.EducationProviders.FirstOrDefaultAsync(e => e.EduCode == eduCode);
+        if (provider is null) return Results.NotFound("University not found"); //404
 
         // Make Education Details object
         var eduDetails = new EducationDetails
@@ -207,7 +225,9 @@ app.MapPost("/PassBuy/newCard/education", async (AppDbContext db, HttpContext co
         // Commit the transaction
         await tx.CommitAsync();
 
-        return Results.Ok(new { message = "New PassBuy Concession Application submitted. Class: Education" });
+        return Results.Created(
+            new { message = "New PassBuy Concession Application submitted. Class: Education" }
+            );
     }
     catch (Exception ex)
     {
