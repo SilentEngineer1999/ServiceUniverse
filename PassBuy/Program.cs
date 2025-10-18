@@ -1,6 +1,8 @@
 using PassBuy.AuthController;
 using PassBuy.Data;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
@@ -8,11 +10,13 @@ using System.Text;
 using PassBuy.Models;
 using System.Globalization;
 using System.Reflection.Metadata;
+using System.Security.Cryptography.X509Certificates;
 
 
 var builder = WebApplication.CreateBuilder(args);
 var connectionString = builder.Configuration.GetConnectionString("Default");
 var cfg = builder.Configuration;
+
 
 // JWT variables
 var jwtKey      = cfg["Jwt:Key"]      ?? throw new InvalidOperationException("Missing Jwt:Key");
@@ -25,15 +29,21 @@ builder.Services
     {
         options.TokenValidationParameters = new()
         {
-            ValidateIssuer = true, ValidateAudience = true,
-            ValidateLifetime = true, ValidateIssuerSigningKey = true,
-            ValidIssuer = jwtIssuer, ValidAudience = jwtAudience,
+            ValidateIssuer = true,
+            ValidateAudience = true,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            ValidIssuer = jwtIssuer,
+            ValidAudience = jwtAudience,
             IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)),
             ClockSkew = TimeSpan.FromSeconds(30) // small leeway
         };
     });
 
 builder.Services.AddAuthorization();
+
+// HttpClient for authentication validation
+builder.Services.AddHttpClient();
 
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(connectionString));
@@ -47,8 +57,17 @@ var app = builder.Build();
 // Database pre-processing
 using (var scope = app.Services.CreateScope())
 {
-    // Get the database as a parameter for this scope
+    // Get the database
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+    var creator = db.Database.GetService<IRelationalDatabaseCreator>();
+
+    // If there is no database, create it
+    if (!await creator.ExistsAsync())
+    {
+        Console.WriteLine("Database does not exist. Creating catalog...");
+        await creator.CreateAsync(); // crée la base uniquement
+    }
 
     // Flag to check if database connected
     bool success = false;
@@ -60,7 +79,7 @@ using (var scope = app.Services.CreateScope())
         try
         {
             // if there are no migrations, will pass gracefully, won't throw
-            db.Database.Migrate();
+            await db.Database.MigrateAsync();
             Console.WriteLine("Migrations successfully applied / or there were no migrations");
             success = true;
         }
@@ -80,11 +99,11 @@ using (var scope = app.Services.CreateScope())
         Console.ResetColor();
     }
     
-    // If the migrations were successful, seed the database with education providers
+    // If the migrations were successful, seed the database
     else
     {
-        var seeder = new DbSeeder(db);
-        seeder.SeedEducationProviders();
+        DbSeeder.SeedEducationProviders(db);
+        DbSeeder.SeedTransportEmployers(db);
     }
 }
 
@@ -151,12 +170,6 @@ app.MapPost("/PassBuy/signIn", async (AppDbContext db, IConfiguration cfg, strin
 })
 .WithName("SignIn");
 
-// I'll forget about this one for now
-// app.MapPost("/PassBuy/addDetails", async (AppDbContext db, string bankCard, string mailAddress)) =>
-// {
-
-// } 
-
 // ----------------------- ORDER A CARD ------------------
 
 app.MapPost("/PassBuy/newCard/standard", async (AppDbContext db, HttpContext context, IHttpClientFactory httpClientFactory) =>
@@ -174,7 +187,8 @@ app.MapPost("/PassBuy/newCard/standard", async (AppDbContext db, HttpContext con
         await db.SaveChangesAsync();
 
         return Results.Created(
-            new { message = "New PassBuy Concession Application submitted. Class: Standard" }
+            uri: (string?) null,
+            value: new { message = "New PassBuy Card application submitted. Class: Standard" }
             );
     }
     catch (Exception ex)
@@ -225,8 +239,13 @@ app.MapPost("/PassBuy/newCard/education", async (AppDbContext db, HttpContext co
         // Commit the transaction
         await tx.CommitAsync();
 
+        // This is where Education Details would be sent
+        // to the Educational Institution for Verification
+
         return Results.Created(
-            new { message = "New PassBuy Concession Application submitted. Class: Education" }
+            uri: (string?) null,
+            value: new { message = "New PassBuy Concession Application approved! " +
+            "Class: Education" }
             );
     }
     catch (Exception ex)
@@ -238,10 +257,91 @@ app.MapPost("/PassBuy/newCard/education", async (AppDbContext db, HttpContext co
 .WithName("newCard/education");
 
 
-// app,MapPost("/PassBuy/checkout", async (AppDbContext db, HttpContext context, IHttpClientFactory httpClientFactory,
-//             string bankCard, int startingBalance, string mailAddress)) =>
-// {
-    
-// }
+app.MapPost("/PassBuy/newCard/transportEmployee", async (AppDbContext db, HttpContext context, IHttpClientFactory httpClientFactory,
+            string employer, int employeeNumber ) =>
+{
+    var userId = await JwtValidator.ValidateJwtWithUsersService(context, httpClientFactory);
+    if (userId == null) return Results.Unauthorized();
+
+    // begin transaction (with multiple steps)
+    await using var tx = await db.Database.BeginTransactionAsync();
+
+    try
+    {
+        var newCard = new PassBuyCardApplication {
+            UserId = userId.Value,
+            CardType = CardType.TransportEmployeeConcession
+        };
+        await db.SaveChangesAsync();
+
+        // Find education provider
+        var transportEmployer = await db.TransportEmployers.FirstOrDefaultAsync(e => e.Name == employer);
+        if (transportEmployer is null) return Results.NotFound("Transport Employer not found"); //404
+
+        // Make Transport Employee Details object
+        var employeeDetails = new TransportEmploymentDetails
+        {
+            ApplicationId = newCard.Id,
+            EmployerId = transportEmployer.Id,
+            EmployeeNumber = employeeNumber
+        };
+
+        // Add education details to the card
+        newCard.TransportEmploymentDetails = employeeDetails;
+
+        // Adding newCard adds EducationDetails to the database as well
+        db.PassBuyCardApplications.Add(newCard);
+        await db.SaveChangesAsync();
+
+        // Commit the transaction
+        await tx.CommitAsync();
+
+        // This is where Transport Employment Details would be sent
+        // to the employer for verification
+
+        return Results.Created(
+            uri: (string?) null,
+            value: new { message = "New PassBuy Concession Application approved! " + 
+                    "Class: Transport Employee" }
+            );
+    }
+    catch (Exception ex)
+    {
+        await tx.RollbackAsync(); // Rollback transaction
+        return Results.Problem(ex.Message);
+    }
+})
+.WithName("newCard/transportEmployee");
+
+
+app.MapPost("/PassBuy/newCard/concession", async (AppDbContext db, HttpContext context, IHttpClientFactory httpClientFactory,
+            DateTime DoB, string fullLegalName, int cardType ) =>
+{
+    var userId = await JwtValidator.ValidateJwtWithUsersService(context, httpClientFactory);
+    if (userId == null) return Results.Unauthorized();
+
+    try
+    {
+        var newCard = new PassBuyCardApplication {
+            UserId = userId.Value,
+            CardType = (CardType)cardType
+        };
+        await db.SaveChangesAsync();
+
+        // Here is where GovID Details would be verified with Government Documents service
+        // and returned
+
+        return Results.Created(
+            uri: (string?) null,
+            value: new { message = "New PassBuy Concession Application approved! " + 
+                    $"Class: {(CardType)cardType}" }
+            );
+    }
+    catch (Exception ex)
+    {
+        return Results.Problem(ex.Message);
+    }
+})
+.WithName("newCard/concession");
 
 app.Run();
