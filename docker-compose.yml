@@ -1,0 +1,110 @@
+version: "3.9"
+
+# Health Microservice
+services:
+  db-health:
+    image: postgres:16
+    container_name: db-health
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: root
+      POSTGRES_DB: postgres
+    volumes:
+      - health_postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5435:5432"
+    networks:
+      - micro_net
+
+  health_backend:
+    build:
+      context: ./healthMicroservice
+      dockerfile: Dockerfile
+    container_name: health_backend
+    depends_on:
+      - db-health
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__DefaultConnection: "Host=db-health;Port=5432;Database=postgres;Username=postgres;Password=root;"
+    ports:
+      - "5102:8080"
+    restart: always
+    networks:
+      - micro_net
+
+# PassBuy Microservice
+  db-passbuy:
+    image: postgres:16
+    container_name: db-passbuy
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: root
+      POSTGRES_DB: postgres
+    volumes:
+      - passbuy_postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5434:5432"
+    networks:
+      - micro_net
+
+  passbuy_backend:
+    build:
+      context: ./PassBuy
+      dockerfile: Dockerfile
+    container_name: passbuy_backend
+    depends_on:
+      - db-passbuy
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__DefaultConnection: "Host=db-passbuy;Port=5432;Database=postgres;Username=postgres;Password=root;"
+    ports:
+      - "5101:8080"
+    restart: always
+    networks:
+      - micro_net
+
+# Utility Microservice
+  db-utility:
+    image: postgres:16
+    container_name: db-utility
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: root
+      POSTGRES_DB: postgres
+    volumes:
+      - utility_postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    networks:
+      - micro_net
+
+  utility_backend:
+    build:
+      context: ./utilityMicroservice
+      dockerfile: Dockerfile
+    container_name: utility_backend
+    depends_on:
+      - db-utility
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__DefaultConnection: "Host=db-utility;Port=5432;Database=postgres;Username=postgres;Password=root;"
+    ports:
+      - "5100:8080"
+    restart: always
+    networks:
+      - micro_net
+
+# Volumes
+volumes:
+  health_postgres_data:
+  passbuy_postgres_data:
+  utility_postgres_data:
+
+# Networks (all are connected to micro_net)
+networks:
+  micro_net:
+    name: micro_net
+    external: true
