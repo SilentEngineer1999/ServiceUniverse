@@ -18,6 +18,7 @@ public class AppDbContext : DbContext
 
     protected override void OnModelCreating(ModelBuilder model)
     {
+        // Foreign Key constraints
         model.Entity<PassBuyCardApplication>()
             .HasOne<User>()
             .WithMany()
@@ -51,7 +52,7 @@ public class AppDbContext : DbContext
         model.Entity<TransportEmploymentDetails>()
             .HasOne<TransportEmployer>()
             .WithMany()
-            .HasForeignKey(t => t.TransportEmployerId)
+            .HasForeignKey(t => t.EmployerId)
             .OnDelete(DeleteBehavior.Restrict);
 
         model.Entity<PassBuyCard>()
@@ -65,5 +66,26 @@ public class AppDbContext : DbContext
             .WithOne()
             .HasForeignKey<PassBuyCard>("ApplicationId")
             .IsRequired(false);
+
+        // Unique constraints
+        model.Entity<EducationDetails>()
+            .HasIndex(e => new { e.ProviderId, e.StudentNumber })
+            .IsUnique();
+
+        model.Entity<EducationProvider>()
+            .HasIndex(p => p.EduCode)
+            .IsUnique();
+
+        model.Entity<EducationProvider>()
+            .HasIndex(p => p.Name)
+            .IsUnique();
+
+        model.Entity<TransportEmploymentDetails>()
+            .HasIndex(t => new { t.EmployerId, t.EmployeeNumber })
+            .IsUnique();
+
+        model.Entity<TransportEmployer>()
+            .HasIndex(t => t.Name)
+            .IsUnique();
     }
 }

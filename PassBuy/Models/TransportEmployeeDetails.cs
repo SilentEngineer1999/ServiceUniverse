@@ -12,7 +12,7 @@ namespace PassBuy.Models
         public int ApplicationId { get; set; }
 
         [ForeignKey("TransportEmployer")]
-        public Guid TransportEmployerId { get; set; }
+        public Guid EmployerId { get; set; }
 
         [Required]
         public int EmployeeNumber { get; set; }
