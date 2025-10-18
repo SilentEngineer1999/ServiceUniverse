@@ -41,14 +41,14 @@ export default function Utilities() {
         const token = localStorage.getItem("token");
         if (!token) return alert("Please sign in again.");
 
-        const protectedRes = await axios.get("http://localhost:5238/protected", {
+        const protectedRes = await axios.get("http://localhost:5100/protected", {
           headers: { Authorization: `Bearer ${token}` },
         });
 
         setUserName(protectedRes.data.name);
         setUserEmail(protectedRes.data.email);
 
-        const utilityRes = await axios.get("http://localhost:5104/fetchUtilityBill", {
+        const utilityRes = await axios.get("http://localhost:5100/fetchUtilityBill", {
           headers: { Authorization: `Bearer ${token}` },
         });
 
