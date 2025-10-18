@@ -23,8 +23,8 @@ public static class JwtIssuer
         };
 
         var token = new JwtSecurityToken(
-            issuer: "serviceUniverse",
-            audience: "PassBuyClients",
+            issuer: cfg["Jwt:Issuer"],
+            audience: cfg["Jwt:Audience"],
             claims: claims,
             expires: DateTime.UtcNow.AddHours(1),
             signingCredentials: creds);

@@ -5,7 +5,7 @@ namespace PassBuy.AuthController
 {
     public static class JwtValidator
     {
-        public static Task<Guid?> ValidateJwtWithUsersService(HttpContext context, IHttpClientFactory? httpClientFactory = null)
+        public static Task<Guid?> ValidateJwtWithUsersService(HttpContext context, IConfiguration cfg, IHttpClientFactory? httpClientFactory = null)
         {
             // Check if Authorization header exists
             if (!context.Request.Headers.TryGetValue("Authorization", out var authHeader)
@@ -14,9 +14,11 @@ namespace PassBuy.AuthController
 
             var token = authHeader.ToString().Substring("Bearer ".Length).Trim();
 
+            Console.Write("JwTValidator");
+
             try
             {
-                var principal = ValidateJwt.ValidateJwtToken(token); // 🔹 reuse your local token validator
+                var principal = ValidateJwt.ValidateJwtToken(token, cfg); // 🔹 reuse your local token validator
 
                 var userId = principal.FindFirst("userId")?.Value;
                 if (Guid.TryParse(userId, out var parsedId))

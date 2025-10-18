@@ -11,6 +11,7 @@ using PassBuy.Models;
 using System.Globalization;
 using System.Reflection.Metadata;
 using System.Security.Cryptography.X509Certificates;
+using System.IdentityModel.Tokens.Jwt;
 
 
 var builder = WebApplication.CreateBuilder(args);
@@ -20,7 +21,7 @@ var cfg = builder.Configuration;
 
 // JWT variables
 var jwtKey      = cfg["Jwt:Key"]      ?? throw new InvalidOperationException("Missing Jwt:Key");
-var jwtIssuer   = cfg["Jwt:Issuer"]   ?? "PassBuy";
+var jwtIssuer   = cfg["Jwt:Issuer"]   ?? "ServiceUniverse";
 var jwtAudience = cfg["Jwt:Audience"] ?? "PassBuyClients";
 
 builder.Services
@@ -60,15 +61,6 @@ using (var scope = app.Services.CreateScope())
     // Get the database
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
-    var creator = db.Database.GetService<IRelationalDatabaseCreator>();
-
-    // If there is no database, create it
-    if (!await creator.ExistsAsync())
-    {
-        Console.WriteLine("Database does not exist. Creating catalog...");
-        await creator.CreateAsync(); // crée la base uniquement
-    }
-
     // Flag to check if database connected
     bool success = false;
 
@@ -79,13 +71,14 @@ using (var scope = app.Services.CreateScope())
         try
         {
             // if there are no migrations, will pass gracefully, won't throw
-            await db.Database.MigrateAsync();
+            db.Database.Migrate();
             Console.WriteLine("Migrations successfully applied / or there were no migrations");
             success = true;
         }
-        catch (Exception ex) when (attempt < 10)
+        catch (Exception ex)
         {
             Console.WriteLine($"Migration attempt {attempt}: DB not ready yet ({ex.Message}). Retrying in 2s...");
+            success = false;
             await Task.Delay(2000);  // wait 2s then try again
         }
     }
@@ -95,10 +88,10 @@ using (var scope = app.Services.CreateScope())
     {
         Console.ForegroundColor = ConsoleColor.Yellow;
         Console.WriteLine("Database failed to connect. No migrations have been applied." +
-            "If Migrations exist, please restart the server.");
+            " If Migrations exist, please restart the server.");
         Console.ResetColor();
     }
-    
+
     // If the migrations were successful, seed the database
     else
     {
@@ -174,13 +167,21 @@ app.MapPost("/PassBuy/signIn", async (AppDbContext db, IConfiguration cfg, strin
 
 app.MapPost("/PassBuy/newCard/standard", async (AppDbContext db, HttpContext context, IHttpClientFactory httpClientFactory) =>
 {
-    var userId = await JwtValidator.ValidateJwtWithUsersService(context, httpClientFactory);
-    if (userId == null) return Results.Unauthorized();
+    var authHeader = context.Request.Headers["Authorization"].ToString();
+    if (!authHeader.StartsWith("Bearer "))
+        return Results.Unauthorized();
+
+    var token = authHeader["Bearer ".Length..].Trim();
+    var principal = ValidateJwt.ValidateJwtToken(token, cfg);
+
+    var userIdString = principal.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
+    if (!Guid.TryParse(userIdString, out var userId))
+        return Results.Unauthorized();
 
     try
     {
         var newCard = new PassBuyCardApplication {
-            UserId = userId.Value,
+            UserId = userId,
             CardType = CardType.Standard
         };
         db.PassBuyCardApplications.Add(newCard);
@@ -201,8 +202,16 @@ app.MapPost("/PassBuy/newCard/standard", async (AppDbContext db, HttpContext con
 app.MapPost("/PassBuy/newCard/education", async (AppDbContext db, HttpContext context, IHttpClientFactory httpClientFactory,
             string eduCode, int stuNum, int courseCode, string courseTitle ) =>
 {
-    var userId = await JwtValidator.ValidateJwtWithUsersService(context, httpClientFactory);
-    if (userId == null) return Results.Unauthorized();
+    var authHeader = context.Request.Headers["Authorization"].ToString();
+    if (!authHeader.StartsWith("Bearer "))
+        return Results.Unauthorized();
+
+    var token = authHeader["Bearer ".Length..].Trim();
+    var principal = ValidateJwt.ValidateJwtToken(token, cfg);
+
+    var userIdString = principal.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
+    if (!Guid.TryParse(userIdString, out var userId))
+        return Results.Unauthorized();
 
     // begin transaction (with multiple steps)
     await using var tx = await db.Database.BeginTransactionAsync();
@@ -210,7 +219,7 @@ app.MapPost("/PassBuy/newCard/education", async (AppDbContext db, HttpContext co
     try
     {
         var newCard = new PassBuyCardApplication {
-            UserId = userId.Value,
+            UserId = userId,
             CardType = CardType.EducationConcession
         };
         await db.SaveChangesAsync();
@@ -260,8 +269,16 @@ app.MapPost("/PassBuy/newCard/education", async (AppDbContext db, HttpContext co
 app.MapPost("/PassBuy/newCard/transportEmployee", async (AppDbContext db, HttpContext context, IHttpClientFactory httpClientFactory,
             string employer, int employeeNumber ) =>
 {
-    var userId = await JwtValidator.ValidateJwtWithUsersService(context, httpClientFactory);
-    if (userId == null) return Results.Unauthorized();
+    var authHeader = context.Request.Headers["Authorization"].ToString();
+    if (!authHeader.StartsWith("Bearer "))
+        return Results.Unauthorized();
+
+    var token = authHeader["Bearer ".Length..].Trim();
+    var principal = ValidateJwt.ValidateJwtToken(token, cfg);
+
+    var userIdString = principal.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
+    if (!Guid.TryParse(userIdString, out var userId))
+        return Results.Unauthorized();
 
     // begin transaction (with multiple steps)
     await using var tx = await db.Database.BeginTransactionAsync();
@@ -269,7 +286,7 @@ app.MapPost("/PassBuy/newCard/transportEmployee", async (AppDbContext db, HttpCo
     try
     {
         var newCard = new PassBuyCardApplication {
-            UserId = userId.Value,
+            UserId = userId,
             CardType = CardType.TransportEmployeeConcession
         };
         await db.SaveChangesAsync();
@@ -317,13 +334,21 @@ app.MapPost("/PassBuy/newCard/transportEmployee", async (AppDbContext db, HttpCo
 app.MapPost("/PassBuy/newCard/concession", async (AppDbContext db, HttpContext context, IHttpClientFactory httpClientFactory,
             DateTime DoB, string fullLegalName, int cardType ) =>
 {
-    var userId = await JwtValidator.ValidateJwtWithUsersService(context, httpClientFactory);
-    if (userId == null) return Results.Unauthorized();
+    var authHeader = context.Request.Headers["Authorization"].ToString();
+    if (!authHeader.StartsWith("Bearer "))
+        return Results.Unauthorized();
+
+    var token = authHeader["Bearer ".Length..].Trim();
+    var principal = ValidateJwt.ValidateJwtToken(token, cfg);
+
+    var userIdString = principal.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
+    if (!Guid.TryParse(userIdString, out var userId))
+        return Results.Unauthorized();
 
     try
     {
         var newCard = new PassBuyCardApplication {
-            UserId = userId.Value,
+            UserId = userId,
             CardType = (CardType)cardType
         };
         await db.SaveChangesAsync();
