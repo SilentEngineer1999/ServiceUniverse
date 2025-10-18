@@ -12,7 +12,7 @@ namespace PassBuy.Models
         public int ApplicationId { get; set; }
 
         [ForeignKey("EducationProvider")]
-        public int EducationProviderId { get; set; }
+        public Guid ProviderId { get; set; }
 
         [Required]
         public int StudentNumber { get; set; }

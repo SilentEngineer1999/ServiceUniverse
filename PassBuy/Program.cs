@@ -144,8 +144,10 @@ app.MapPost("/PassBuy/newCard/standard", async (AppDbContext db, HttpContext con
     try
     {
         var newCard = new PassBuyCardApplication { UserId = userId.Value, CardType = CardType.Standard };
-        db.PassBuyCardApplication.Add(newCard);
+        db.PassBuyCardApplications.Add(newCard);
         await db.SaveChangesAsync();
+
+        return Results.Ok(new { message = "New PassBuy Concession Application submitted. Class: Standard"});
     }
     catch (Exception ex)
     {
@@ -155,22 +157,29 @@ app.MapPost("/PassBuy/newCard/standard", async (AppDbContext db, HttpContext con
 .WithName("newCard/standard");
 
 app.MapPost("/PassBuy/newCard/education", async (AppDbContext db, HttpContext context, IHttpClientFactory httpClientFactory,
-            Guid universityId, int stuNum, string courseCode, string courseTitle ) =>
+            Guid universityId, int stuNum, int courseCode, string courseTitle ) =>
 {
     var userId = await JwtValidator.ValidateJwtWithUsersService(context, httpClientFactory);
     if (userId == null) return Results.Unauthorized();
 
+    // begin transaction (with multiple steps)
+    await using var tx = await db.Database.BeginTransactionAsync();
+
     try
     {
-        var newCard = new PassBuyCardApplication { UserID = userId.Value, CardType = CardType.EducationConcession };
+        var newCard = new PassBuyCardApplication { UserId = userId.Value, CardType = CardType.EducationConcession };
+        await db.SaveChangesAsync();
 
+        // Find education provider
         var provider = await db.EducationProviders
             .FirstOrDefaultAsync(e => e.Id == universityId);
+        if (provider is null) return Results.NotFound("University not found");
 
+        // Make Education Details object
         var eduDetails = new EducationDetails
         {
-            PassBuyApplication = newCard,
-            EducationProvider = provider.Id,
+            ApplicationId = newCard.Id,
+            ProviderId = provider.Id,
             StudentNumber = stuNum,
             CourseCode = courseCode,
             CourseTitle = courseTitle
@@ -180,13 +189,17 @@ app.MapPost("/PassBuy/newCard/education", async (AppDbContext db, HttpContext co
         newCard.EducationDetails = eduDetails;
 
         // Adding newCard adds EducationDetails to the database as well
-        db.PassBuyCardApplication.Add(newCard);
+        db.PassBuyCardApplications.Add(newCard);
         await db.SaveChangesAsync();
 
-        return Results.Ok(new { message = "New PassBuy Concession Application submitted. Class: Education"});
+        // Commit the transaction
+        await tx.CommitAsync();
+
+        return Results.Ok(new { message = "New PassBuy Concession Application submitted. Class: Education" });
     }
     catch (Exception ex)
     {
+        await tx.RollbackAsync(); // Rollback transaction
         return Results.Problem(ex.Message);
     }
 })

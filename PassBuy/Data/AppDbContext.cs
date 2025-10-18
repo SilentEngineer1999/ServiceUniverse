@@ -45,7 +45,7 @@ public class AppDbContext : DbContext
         model.Entity<EducationDetails>()
             .HasOne<EducationProvider>()
             .WithMany()
-            .HasForeignKey(d => d.EducationProviderId)
+            .HasForeignKey(d => d.ProviderId)
             .OnDelete(DeleteBehavior.Restrict);
 
         model.Entity<TransportEmploymentDetails>()
