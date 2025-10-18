@@ -57,6 +57,11 @@ namespace PassBuy.Data
                 new() { Id = Guid.NewGuid(), Name = "Veolia" },
                 new() { Id = Guid.NewGuid(), Name = "MTR Corp" }
             };
+
+            db.TransportEmployers.AddRange(defaultEmployers);
+            db.SaveChanges();
+
+            Console.WriteLine("Default transport employers seeded.");
         }
     }
 }
