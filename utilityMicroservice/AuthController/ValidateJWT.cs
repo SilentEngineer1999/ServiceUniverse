@@ -9,7 +9,7 @@ namespace backendServices.AuthController
     {
         public static ClaimsPrincipal ValidateJwtToken(string token)
         {
-            // 👇 VERY IMPORTANT: prevents .NET from renaming claim types
+
             JwtSecurityTokenHandler.DefaultInboundClaimTypeMap.Clear();
 
             var tokenHandler = new JwtSecurityTokenHandler();
