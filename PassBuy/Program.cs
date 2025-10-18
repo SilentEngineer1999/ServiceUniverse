@@ -48,20 +48,32 @@ var app = builder.Build();
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    bool success = false;
 
     // Try 10 times to apply migrations if there are any
-    for (var attempt = 1; attempt <= 10; attempt++)
+    Console.WriteLine("Looking for migrations");
+    for (var attempt = 1; attempt <= 10 && !success; attempt++)
     {
         try
         {
-            db.Database.Migrate(); // if there are no migrations, will pass gracefully, won't throw
-            break;
+            // if there are no migrations, will pass gracefully, won't throw
+            db.Database.Migrate();
+            Console.WriteLine("Migrations successfully applied / or there were no migrations");
+            success = true;
         }
         catch (Exception ex) when (attempt < 10)
         {
-            Console.WriteLine($"⚠️  Attempt {attempt}: DB not ready yet ({ex.Message}). Retrying in 2s...");
+            Console.WriteLine($"Migration attempt {attempt}: DB not ready yet ({ex.Message}). Retrying in 2s...");
             await Task.Delay(2000);  // wait 2s then try again
         }
+    }
+
+    // If it didn't manage to connect after the loop, raise a warning (but it will still run)
+    if (!success) {
+        Console.ForegroundColor = ConsoleColor.Yellow;
+        Console.WriteLine("Database failed to connect. No migrations have been applied." +
+            "If Migrations exist, please restart the server.");
+        Console.ResetColor();
     }
 }
 
