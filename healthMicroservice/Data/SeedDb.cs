@@ -2,7 +2,7 @@ using HealthApi.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace HealthApi.Data.Seeding
+namespace HealthApi.Data
 {
     public static class SeedDb
     {

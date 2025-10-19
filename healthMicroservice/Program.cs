@@ -3,54 +3,52 @@ using Microsoft.AspNetCore.Http.Json;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
-using System.IdentityModel.Tokens.Jwt;                 // <-- fixes JwtRegisteredClaimNames
+using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
 using System.Text.Json.Serialization;
-using HttpJsonOptions = Microsoft.AspNetCore.Http.Json.JsonOptions; // <-- disambiguates JsonOptions
+using HttpJsonOptions = Microsoft.AspNetCore.Http.Json.JsonOptions;
 
 using HealthApi.Data;
-using HealthApi.Data.Seeding;
 using HealthApi.Models;
-using HealthApi.Security;
+using HealthApi.AuthController;
 
-// ===== Config (dev) =====
-const string JwtIssuer = "HealthService.AllInOne";
-const string JwtAudience = "HealthClients";
-const string JwtSecret = "change-this-very-long-secret-at-least-32-characters";
-const int AccessTokenMinutes = 60;
-
-// ===== App setup =====
 var builder = WebApplication.CreateBuilder(args);
+var cfg = builder.Configuration;
 
+// Database
+builder.Services.AddDbContext<HealthDbContext>(options =>
+    options.UseNpgsql(cfg.GetConnectionString("DefaultConnection")));
+
+// JWT + helpers
+builder.Services.Configure<JwtOptions>(cfg.GetSection("Jwt"));
+builder.Services.AddScoped<IPasswordHasher, PasswordHasher>();
+builder.Services.AddScoped<IRefreshTokenGenerator, RefreshTokenGenerator>();
+
+// Pull from appsettings.json
+var jwtKey      = cfg["Jwt:Key"]      ?? throw new InvalidOperationException("Missing Jwt:Key");
+var jwtIssuer   = cfg["Jwt:Issuer"]   ?? throw new InvalidOperationException("Missing Jwt:Issuer");
+var jwtAudience = cfg["Jwt:Audience"] ?? throw new InvalidOperationException("Missing Jwt:Audience");
+
+// CORS / JSON
 builder.Services.AddCors(o => o.AddDefaultPolicy(p =>
     p.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod()));
 
-builder.Services.Configure<HttpJsonOptions>(opt =>   // <-- use the aliased JsonOptions
+builder.Services.Configure<HttpJsonOptions>(opt =>
 {
     opt.SerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull;
 });
 
-// Bind JwtOptions and register JwtTokenService
-builder.Services.Configure<JwtOptions>(opt =>
-{
-    opt.Issuer = JwtIssuer;
-    opt.Audience = JwtAudience;
-    opt.Secret = JwtSecret;
-    opt.AccessTokenMinutes = AccessTokenMinutes;
-});
-builder.Services.AddSingleton<IJwtTokenService, JwtTokenService>();
-builder.Services.AddSingleton<IPasswordHasher, PasswordHasher>();
-builder.Services.AddSingleton<IRefreshTokenGenerator, RefreshTokenGenerator>();
-
-builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+// Authentication + Authorization
+builder.Services
+    .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(opt =>
     {
         opt.TokenValidationParameters = new TokenValidationParameters
         {
-            ValidIssuer = JwtIssuer,
-            ValidAudience = JwtAudience,
-            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(JwtSecret)),
+            ValidIssuer = jwtIssuer,
+            ValidAudience = jwtAudience,
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)),
             ValidateIssuer = true,
             ValidateAudience = true,
             ValidateIssuerSigningKey = true,
@@ -62,12 +60,6 @@ builder.Services.AddAuthorization();
 
 // Add openApi
 builder.Services.AddOpenApi();
-
-// Persistence: DbContext (reads ConnectionStrings:DefaultConnection)
-var cfg = builder.Configuration;
-builder.Services.AddDbContext<HealthDbContext>(options =>
-    options.UseNpgsql(cfg.GetConnectionString("DefaultConnection")
-        ?? throw new InvalidOperationException("Missing ConnectionStrings:DefaultConnection")));
 
 var app = builder.Build();
 app.UseCors();

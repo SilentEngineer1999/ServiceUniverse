@@ -5,7 +5,7 @@ using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using HealthApi.Models;
 
-namespace HealthApi.Security
+namespace HealthApi.AuthController
 {
     public class JwtOptions
     {

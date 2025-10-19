@@ -1,7 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 
-namespace HealthApi.Security
+namespace HealthApi.AuthController
 {
     public interface IPasswordHasher
     {
