@@ -1,13 +1,18 @@
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Http.Json;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;                 // <-- fixes JwtRegisteredClaimNames
 using System.Security.Claims;
-using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json.Serialization;
 using HttpJsonOptions = Microsoft.AspNetCore.Http.Json.JsonOptions; // <-- disambiguates JsonOptions
+
+using HealthApi.Data;
+using HealthApi.Data.Seeding;
+using HealthApi.Models;
+using HealthApi.Security;
 
 // ===== Config (dev) =====
 const string JwtIssuer = "HealthService.AllInOne";
@@ -25,6 +30,18 @@ builder.Services.Configure<HttpJsonOptions>(opt =>   // <-- use the aliased Json
 {
     opt.SerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull;
 });
+
+// Bind JwtOptions and register JwtTokenService
+builder.Services.Configure<JwtOptions>(opt =>
+{
+    opt.Issuer = JwtIssuer;
+    opt.Audience = JwtAudience;
+    opt.Secret = JwtSecret;
+    opt.AccessTokenMinutes = AccessTokenMinutes;
+});
+builder.Services.AddSingleton<IJwtTokenService, JwtTokenService>();
+builder.Services.AddSingleton<IPasswordHasher, PasswordHasher>();
+builder.Services.AddSingleton<IRefreshTokenGenerator, RefreshTokenGenerator>();
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(opt =>
@@ -46,68 +63,19 @@ builder.Services.AddAuthorization();
 // Add openApi
 builder.Services.AddOpenApi();
 
+// Persistence: DbContext (reads ConnectionStrings:DefaultConnection)
+var cfg = builder.Configuration;
+builder.Services.AddDbContext<HealthDbContext>(options =>
+    options.UseNpgsql(cfg.GetConnectionString("DefaultConnection")
+        ?? throw new InvalidOperationException("Missing ConnectionStrings:DefaultConnection")));
+
 var app = builder.Build();
 app.UseCors();
 app.UseAuthentication();
 app.UseAuthorization();
 
-// ===== In-memory stores =====
-var users = new List<User>(); // auth
-var refreshTokens = new Dictionary<string, string>(); // refresh -> userId
-
-var doctors = new List<Doctor>
-{
-    new() { Id = "d1", Name = "Dr. Ayesha Rahman", Specialty = "General Practice",
-        Slots = new() { "2025-10-16T09:00","2025-10-16T09:30","2025-10-16T10:00" } },
-
-    new() { Id = "d2", Name = "Dr. Samuel Lee", Specialty = "Cardiology",
-        Slots = new() { "2025-10-16T11:00","2025-10-16T11:30","2025-10-16T12:00" } },
-
-    new() { Id = "d3", Name = "Dr. Priya Nair", Specialty = "Dermatology",
-        Slots = new() { "2025-10-16T13:00","2025-10-16T13:30","2025-10-16T14:00" } },
-
-    new() { Id = "d4", Name = "Dr. Miguel Santos", Specialty = "Pediatrics",
-        Slots = new() { "2025-10-16T09:15","2025-10-16T09:45","2025-10-16T10:15" } },
-
-    new() { Id = "d5", Name = "Dr. Olivia Chen", Specialty = "Orthopedics",
-        Slots = new() { "2025-10-16T15:00","2025-10-16T15:30","2025-10-16T16:00" } }
-};
-
-var appointments = new List<Appointment>
-{
-    new() { Id = "a1", PatientName = "Maria H.", DoctorId = "d1", Time = "2025-10-16T09:00" }
-};
-
-// ===== Helpers =====
-static void HashPassword(string password, out byte[] salt, out byte[] hash)
-{
-    salt = RandomNumberGenerator.GetBytes(16);
-    using var pbkdf2 = new Rfc2898DeriveBytes(password, salt, 100_000, HashAlgorithmName.SHA256);
-    hash = pbkdf2.GetBytes(32);
-}
-static bool VerifyPassword(string password, byte[] salt, byte[] hash)
-{
-    using var pbkdf2 = new Rfc2898DeriveBytes(password, salt, 100_000, HashAlgorithmName.SHA256);
-    var calc = pbkdf2.GetBytes(32);
-    return CryptographicOperations.FixedTimeEquals(calc, hash);
-}
-static string NewRefreshToken() => Convert.ToBase64String(RandomNumberGenerator.GetBytes(64));
-string IssueAccessToken(User u)
-{
-    var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(JwtSecret));
-    var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
-    var claims = new[]
-    {
-        new Claim(JwtRegisteredClaimNames.Sub, u.Id),
-        new Claim(JwtRegisteredClaimNames.Email, u.Email),
-        new Claim(ClaimTypes.Name, u.Name),
-        new Claim(ClaimTypes.Role, u.Role)
-    };
-    var token = new JwtSecurityToken(
-        issuer: JwtIssuer, audience: JwtAudience, claims: claims,
-        expires: DateTime.UtcNow.AddMinutes(AccessTokenMinutes), signingCredentials: creds);
-    return new JwtSecurityTokenHandler().WriteToken(token);
-}
+// Seed database on startup
+await SeedDb.EnsureCreatedAndSeedAsync(app.Services);
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
@@ -118,100 +86,143 @@ if (app.Environment.IsDevelopment())
 // ===== Auth endpoints =====
 app.MapGet("/api/auth/health", () => Results.Ok(new { status = "ok" }));
 
-app.MapPost("/api/auth/signup", ([FromBody] SignupDto dto) =>
+app.MapPost("/api/auth/signup", async (
+    [FromBody] SignupDto dto,
+    HealthDbContext db,
+    IPasswordHasher hasher,
+    IJwtTokenService jwt,
+    IRefreshTokenGenerator refreshGen) =>
 {
     if (string.IsNullOrWhiteSpace(dto.Name) ||
         string.IsNullOrWhiteSpace(dto.Email) ||
         string.IsNullOrWhiteSpace(dto.Password))
         return Results.BadRequest("name, email, password required.");
 
-    if (users.Any(u => u.Email.Equals(dto.Email.Trim(), StringComparison.OrdinalIgnoreCase)))
-        return Results.Conflict("Email already registered.");
+    var emailNorm = dto.Email.Trim().ToLower();
+    var exists = await db.Users.AnyAsync(u => u.Email == emailNorm);
+    if (exists) return Results.Conflict("Email already registered.");
 
-    HashPassword(dto.Password, out var salt, out var hash);
+    hasher.HashPassword(dto.Password, out var salt, out var hash);
     var user = new User
     {
         Id = $"u{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}",
         Name = dto.Name.Trim(),
-        Email = dto.Email.Trim(),
+        Email = emailNorm,
         PasswordSalt = Convert.ToBase64String(salt),
         PasswordHash = Convert.ToBase64String(hash),
         Role = string.IsNullOrWhiteSpace(dto.Role) ? "patient" : dto.Role.Trim().ToLower()
     };
-    users.Add(user);
+    db.Users.Add(user);
+    await db.SaveChangesAsync();
 
-    var access = IssueAccessToken(user);
-    var refresh = NewRefreshToken();
-    refreshTokens[refresh] = user.Id;
+    var access = jwt.IssueAccessToken(user);
+    var refresh = refreshGen.NewRefreshToken();
+    db.RefreshTokens.Add(new RefreshToken { Token = refresh, UserId = user.Id, CreatedUtc = DateTime.UtcNow });
+    await db.SaveChangesAsync();
+
     return Results.Ok(new { accessToken = access, refreshToken = refresh, user = new { user.Id, user.Name, user.Email, user.Role } });
 });
 
-app.MapPost("/api/auth/login", ([FromBody] LoginDto dto) =>
+app.MapPost("/api/auth/login", async (
+    [FromBody] LoginDto dto,
+    HealthDbContext db,
+    IPasswordHasher hasher,
+    IJwtTokenService jwt,
+    IRefreshTokenGenerator refreshGen) =>
 {
     if (string.IsNullOrWhiteSpace(dto.Email) || string.IsNullOrWhiteSpace(dto.Password))
         return Results.BadRequest("email and password required.");
 
-    var user = users.FirstOrDefault(u => u.Email.Equals(dto.Email.Trim(), StringComparison.OrdinalIgnoreCase));
+    var emailNorm = dto.Email.Trim().ToLower();
+    var user = await db.Users.FirstOrDefaultAsync(u => u.Email == emailNorm);
     if (user is null) return Results.Unauthorized();
 
-    var ok = VerifyPassword(dto.Password, Convert.FromBase64String(user.PasswordSalt), Convert.FromBase64String(user.PasswordHash));
+    var ok = hasher.VerifyPassword(dto.Password,
+        Convert.FromBase64String(user.PasswordSalt),
+        Convert.FromBase64String(user.PasswordHash));
     if (!ok) return Results.Unauthorized();
 
-    var access = IssueAccessToken(user);
-    var refresh = NewRefreshToken();
-    refreshTokens[refresh] = user.Id;
+    var access = jwt.IssueAccessToken(user);
+    var refresh = refreshGen.NewRefreshToken();
+    db.RefreshTokens.Add(new RefreshToken { Token = refresh, UserId = user.Id, CreatedUtc = DateTime.UtcNow });
+    await db.SaveChangesAsync();
+
     return Results.Ok(new { accessToken = access, refreshToken = refresh, user = new { user.Id, user.Name, user.Email, user.Role } });
 });
 
-app.MapPost("/api/auth/refresh", ([FromBody] RefreshDto dto) =>
+app.MapPost("/api/auth/refresh", async (
+    [FromBody] RefreshDto dto,
+    HealthDbContext db,
+    IJwtTokenService jwt,
+    IRefreshTokenGenerator refreshGen) =>
 {
     if (string.IsNullOrWhiteSpace(dto.RefreshToken)) return Results.BadRequest("refreshToken required.");
-    if (!refreshTokens.TryGetValue(dto.RefreshToken, out var userId)) return Results.Unauthorized();
 
-    var user = users.FirstOrDefault(u => u.Id == userId);
+    var rt = await db.RefreshTokens.FirstOrDefaultAsync(r => r.Token == dto.RefreshToken);
+    if (rt is null) return Results.Unauthorized();
+
+    var user = await db.Users.FirstOrDefaultAsync(u => u.Id == rt.UserId);
     if (user is null) return Results.Unauthorized();
 
-    refreshTokens.Remove(dto.RefreshToken);
-    var newRefresh = NewRefreshToken();
-    refreshTokens[newRefresh] = user.Id;
+    db.RefreshTokens.Remove(rt); // rotate
+    var newRefresh = refreshGen.NewRefreshToken();
+    db.RefreshTokens.Add(new RefreshToken { Token = newRefresh, UserId = user.Id, CreatedUtc = DateTime.UtcNow });
+    await db.SaveChangesAsync();
 
-    var access = IssueAccessToken(user);
+    var access = jwt.IssueAccessToken(user);
     return Results.Ok(new { accessToken = access, refreshToken = newRefresh });
 });
 
-app.MapGet("/api/auth/me", (ClaimsPrincipal p) =>
+app.MapGet("/api/auth/me", async (ClaimsPrincipal p, HealthDbContext db) =>
 {
     if (!(p.Identity?.IsAuthenticated ?? false)) return Results.Unauthorized();
     var sub = p.FindFirstValue(JwtRegisteredClaimNames.Sub);
-    var email = p.FindFirstValue(ClaimTypes.Email) ?? p.FindFirstValue(JwtRegisteredClaimNames.Email);
-    var name = p.FindFirstValue(ClaimTypes.Name) ?? "";
-    var role = p.FindFirstValue(ClaimTypes.Role) ?? "patient";
+    if (string.IsNullOrEmpty(sub)) return Results.Unauthorized();
+
+    var user = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == sub);
+    if (user is null) return Results.Unauthorized();
+
+    var email = user.Email;
+    var name = user.Name ?? "";
+    var role = user.Role ?? "patient";
     return Results.Ok(new { id = sub, name, email, role });
 }).RequireAuthorization();
 
-app.MapPost("/api/auth/logout", ([FromBody] RefreshDto dto) =>
+app.MapPost("/api/auth/logout", async ([FromBody] RefreshDto dto, HealthDbContext db) =>
 {
-    if (!string.IsNullOrWhiteSpace(dto.RefreshToken)) refreshTokens.Remove(dto.RefreshToken);
+    if (!string.IsNullOrWhiteSpace(dto.RefreshToken))
+    {
+        var rt = await db.RefreshTokens.FirstOrDefaultAsync(r => r.Token == dto.RefreshToken);
+        if (rt is not null) db.RefreshTokens.Remove(rt);
+        await db.SaveChangesAsync();
+    }
     return Results.Ok();
 });
 
 // ===== Data endpoints =====
-app.MapGet("/api/doctors", () => Results.Ok(doctors));
-
-app.MapGet("/api/appointments", () =>
+app.MapGet("/api/doctors", async (HealthDbContext db) =>
 {
-    var result = appointments.Select(a => new AppointmentDto
-    {
-        Id = a.Id,
-        PatientName = a.PatientName,
-        DoctorId = a.DoctorId,
-        DoctorName = doctors.FirstOrDefault(d => d.Id == a.DoctorId)?.Name,
-        Time = a.Time
-    });
+    var docs = await db.Doctors.AsNoTracking().ToListAsync();
+    return Results.Ok(docs);
+});
+
+app.MapGet("/api/appointments", async (HealthDbContext db) =>
+{
+    var result = await db.Appointments
+        .AsNoTracking()
+        .Select(a => new AppointmentDto
+        {
+            Id = a.Id,
+            PatientName = a.PatientName,
+            DoctorId = a.DoctorId,
+            DoctorName = db.Doctors.Where(d => d.Id == a.DoctorId).Select(d => d.Name).FirstOrDefault(),
+            Time = a.Time
+        })
+        .ToListAsync();
     return Results.Ok(result);
 });
 
-app.MapPost("/api/appointments", ([FromBody] CreateAppointmentDto dto, ClaimsPrincipal userPrincipal) =>
+app.MapPost("/api/appointments", async ([FromBody] CreateAppointmentDto dto, ClaimsPrincipal userPrincipal, HealthDbContext db) =>
 {
     if (!userPrincipal.Identity?.IsAuthenticated ?? true)
         return Results.Unauthorized();
@@ -221,9 +232,9 @@ app.MapPost("/api/appointments", ([FromBody] CreateAppointmentDto dto, ClaimsPri
         string.IsNullOrWhiteSpace(dto.Time))
         return Results.BadRequest("patientName, doctorId and time are required.");
 
-    var doctor = doctors.FirstOrDefault(d => d.Id == dto.DoctorId);
+    var doctor = await db.Doctors.FirstOrDefaultAsync(d => d.Id == dto.DoctorId);
     if (doctor is null) return Results.NotFound("Doctor not found.");
-    if (!doctor.Slots.Contains(dto.Time)) return Results.BadRequest("Selected time is not in doctor's available slots.");
+    if (!(doctor.Slots?.Contains(dto.Time) ?? false)) return Results.BadRequest("Selected time is not in doctor's available slots.");
 
     var appt = new Appointment
     {
@@ -232,7 +243,8 @@ app.MapPost("/api/appointments", ([FromBody] CreateAppointmentDto dto, ClaimsPri
         DoctorId = dto.DoctorId,
         Time = dto.Time
     };
-    appointments.Insert(0, appt);
+    db.Appointments.Add(appt);
+    await db.SaveChangesAsync();
 
     var dtoOut = new AppointmentDto
     {
@@ -246,23 +258,3 @@ app.MapPost("/api/appointments", ([FromBody] CreateAppointmentDto dto, ClaimsPri
 }).RequireAuthorization();
 
 app.Run();
-
-// ===== Models / DTOs =====
-record User
-{
-    public string Id { get; set; } = default!;
-    public string Name { get; set; } = default!;
-    public string Email { get; set; } = default!;
-    public string PasswordHash { get; set; } = default!;
-    public string PasswordSalt { get; set; } = default!;
-    public string Role { get; set; } = "patient";
-}
-
-record Doctor { public string Id { get; set; } = default!; public string Name { get; set; } = default!; public string Specialty { get; set; } = default!; public List<string> Slots { get; set; } = new(); }
-record Appointment { public string Id { get; set; } = default!; public string PatientName { get; set; } = default!; public string DoctorId { get; set; } = default!; public string Time { get; set; } = default!; }
-record CreateAppointmentDto { public string PatientName { get; set; } = default!; public string DoctorId { get; set; } = default!; public string Time { get; set; } = default!; }
-record AppointmentDto { public string Id { get; set; } = default!; public string PatientName { get; set; } = default!; public string DoctorId { get; set; } = default!; public string? DoctorName { get; set; } public string Time { get; set; } = default!; }
-
-record SignupDto(string Name, string Email, string Password, string? Role);
-record LoginDto(string Email, string Password);
-record RefreshDto(string RefreshToken);
