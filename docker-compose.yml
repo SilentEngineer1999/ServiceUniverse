@@ -90,7 +90,8 @@ services:
       - db-utility
     environment:
       ASPNETCORE_ENVIRONMENT: Development
-      ConnectionStrings__DefaultConnection: "Host=db-utility;Port=5432;Database=postgres;Username=postgres;Password=root;"
+      ConnectionStrings__UsersDb: "Host=db-utility;Port=5432;Database=usersdb;Username=postgres;Password=root;"
+      ConnectionStrings__UtilityDb: "Host=db-utility;Port=5432;Database=postgres;Username=postgres;Password=root;"
     ports:
       - "5100:8080"
     restart: always
