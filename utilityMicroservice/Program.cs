@@ -5,14 +5,16 @@ using backendServices.AuthController; // for JwtValidator
 using System.Threading;
 
 var builder = WebApplication.CreateBuilder(args);
+var cfg = builder.Configuration;
 
 // Users database
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseNpgsql("Host=db-utility;Port=5432;Database=usersdb;Username=postgres;Password=root"));
+    options.UseNpgsql(cfg.GetConnectionString("UsersDb")));
 
 // Utilities database
+
 builder.Services.AddDbContext<UtilityDbContext>(options =>
-    options.UseNpgsql("Host=db-utility;Port=5432;Database=postgres;Username=postgres;Password=root"));
+    options.UseNpgsql(cfg.GetConnectionString("UtilityDb")));
 
 // HttpClient for Users microservice validation
 builder.Services.AddHttpClient();
@@ -151,7 +153,8 @@ app.MapGet("/protected", (HttpContext context) =>
     }
 });
 
-// ------------------------FETCHUTILITYBILLS------------------------------ 
+
+// Fetch bills
 app.MapGet("/fetchUtilityBill", async (HttpContext context, UtilityDbContext db, IHttpClientFactory httpClientFactory) =>
 {
     var userId = await JwtValidator.ValidateJwtWithUsersService(context, httpClientFactory);
