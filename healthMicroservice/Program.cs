@@ -8,9 +8,9 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json.Serialization;
 using HttpJsonOptions = Microsoft.AspNetCore.Http.Json.JsonOptions; // <-- disambiguates JsonOptions
-//Anwar
 
-// ===== Config (dev) =====
+
+
 const string JwtIssuer = "HealthService.AllInOne";
 const string JwtAudience = "HealthClients";
 const string JwtSecret = "change-this-very-long-secret-at-least-32-characters";

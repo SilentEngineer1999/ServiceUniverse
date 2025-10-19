@@ -1,22 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 
-/**
- * Health Booking Frontend — Canvas Preview (Fixed + Tests)
- * -------------------------------------------------------
- * Single-file React app that mirrors your real frontend (Login, Signup, Dashboard,
- * Doctors, Availability, Book, Cancel). Uses an in-memory mock API so it runs here.
- *
- * ✅ Bug fix: Removed stray ")};" that prematurely closed seedSlots and caused a
- *    SyntaxError. seedSlots now closes with a single "}".
- * ✅ Enhancement: 10 doctors, ~2 months of availability (every 2nd day, 6–7 slots/day).
- * ✅ UX: Instant refresh of My Appointments after booking/cancelling.
- * ✅ Tests: Added a built-in Test Panel that validates signup→patient, doctors=10,
- *    availability exists, booking consumes a slot, cancelling frees it.
- */
 
-// ---------------------------------------------------------------------------
-// Mock API factory (isolated instances so tests don't affect the live preview)
-// ---------------------------------------------------------------------------
 function createMockAPI({ days = 60, slotMinutes = 30, startHour = 9, everyNthDay = 2 } = {}) {
   let users = []; // {id,email,hash,role}
   let patients = []; // {id,userId,name}
