@@ -16,19 +16,29 @@ using HealthApi.AuthController;
 var builder = WebApplication.CreateBuilder(args);
 var cfg = builder.Configuration;
 
-// Database
-builder.Services.AddDbContext<HealthDbContext>(options =>
-    options.UseNpgsql(cfg.GetConnectionString("DefaultConnection")));
+// ====================== Services ======================
 
-// JWT + helpers
-builder.Services.Configure<JwtOptions>(cfg.GetSection("Jwt"));
+// DB
+builder.Services.AddDbContext<HealthDbContext>(opts =>
+    opts.UseNpgsql(cfg.GetConnectionString("DefaultConnection")));
+
+// Bind & validate JWT options (ensures Key/Issuer/Audience exist)
+builder.Services.AddOptions<JwtOptions>()
+    .Bind(cfg.GetSection("Jwt"))
+    .Validate(o => !string.IsNullOrWhiteSpace(o.Key),      "Jwt:Key is missing")
+    .Validate(o => !string.IsNullOrWhiteSpace(o.Issuer),   "Jwt:Issuer is missing")
+    .Validate(o => !string.IsNullOrWhiteSpace(o.Audience), "Jwt:Audience is missing")
+    .ValidateOnStart();
+
+// DI registrations
+builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
 builder.Services.AddScoped<IPasswordHasher, PasswordHasher>();
 builder.Services.AddScoped<IRefreshTokenGenerator, RefreshTokenGenerator>();
 
-// Pull from appsettings.json
-var jwtKey      = cfg["Jwt:Key"]      ?? throw new InvalidOperationException("Missing Jwt:Key");
-var jwtIssuer   = cfg["Jwt:Issuer"]   ?? throw new InvalidOperationException("Missing Jwt:Issuer");
-var jwtAudience = cfg["Jwt:Audience"] ?? throw new InvalidOperationException("Missing Jwt:Audience");
+// Pull values (after validation above, these are guaranteed)
+var jwtKey      = cfg["Jwt:Key"]!;
+var jwtIssuer   = cfg["Jwt:Issuer"]!;
+var jwtAudience = cfg["Jwt:Audience"]!;
 
 // CORS / JSON
 builder.Services.AddCors(o => o.AddDefaultPolicy(p =>
@@ -39,7 +49,7 @@ builder.Services.Configure<HttpJsonOptions>(opt =>
     opt.SerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull;
 });
 
-// Authentication + Authorization
+// AuthN/Z
 builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(opt =>
@@ -56,28 +66,51 @@ builder.Services
             ClockSkew = TimeSpan.FromSeconds(30)
         };
     });
+
 builder.Services.AddAuthorization();
 
-// Add openApi
+// OpenAPI
 builder.Services.AddOpenApi();
 
+// ====================== App ======================
+
 var app = builder.Build();
+
 app.UseCors();
 app.UseAuthentication();
 app.UseAuthorization();
 
-// Seed database on startup
-await SeedDb.EnsureCreatedAndSeedAsync(app.Services);
+// Apply migrations on startup (fresh DBs work immediately)
+await using (var scope = app.Services.CreateAsyncScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<HealthDbContext>();
+    await db.Database.MigrateAsync();
+    // If you have explicit seeding that is safe to run repeatedly, call it here:
+    // await SeedDb.SeedAsync(scope.ServiceProvider);
+}
 
-// Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
 }
 
-// ===== Auth endpoints =====
+// ------------- Health endpoints (tolerant) -------------
+app.MapGet("/health", async (HealthDbContext db) =>
+{
+    try
+    {
+        await db.Database.ExecuteSqlRawAsync("SELECT 1");
+        return Results.Ok(new { status = "ok" });
+    }
+    catch (Exception ex)
+    {
+        return Results.Problem(ex.Message, statusCode: 503);
+    }
+});
+
 app.MapGet("/api/auth/health", () => Results.Ok(new { status = "ok" }));
 
+// --------------------- Auth ---------------------
 app.MapPost("/api/auth/signup", async (
     [FromBody] SignupDto dto,
     HealthDbContext db,
@@ -91,8 +124,8 @@ app.MapPost("/api/auth/signup", async (
         return Results.BadRequest("name, email, password required.");
 
     var emailNorm = dto.Email.Trim().ToLower();
-    var exists = await db.Users.AnyAsync(u => u.Email == emailNorm);
-    if (exists) return Results.Conflict("Email already registered.");
+    if (await db.Users.AnyAsync(u => u.Email == emailNorm))
+        return Results.Conflict("Email already registered.");
 
     hasher.HashPassword(dto.Password, out var salt, out var hash);
     var user = new User
@@ -104,15 +137,21 @@ app.MapPost("/api/auth/signup", async (
         PasswordHash = Convert.ToBase64String(hash),
         Role = string.IsNullOrWhiteSpace(dto.Role) ? "patient" : dto.Role.Trim().ToLower()
     };
+
     db.Users.Add(user);
     await db.SaveChangesAsync();
 
-    var access = jwt.IssueAccessToken(user);
+    var access  = jwt.IssueAccessToken(user);
     var refresh = refreshGen.NewRefreshToken();
     db.RefreshTokens.Add(new RefreshToken { Token = refresh, UserId = user.Id, CreatedUtc = DateTime.UtcNow });
     await db.SaveChangesAsync();
 
-    return Results.Ok(new { accessToken = access, refreshToken = refresh, user = new { user.Id, user.Name, user.Email, user.Role } });
+    return Results.Ok(new
+    {
+        accessToken = access,
+        refreshToken = refresh,
+        user = new { user.Id, user.Name, user.Email, user.Role }
+    });
 });
 
 app.MapPost("/api/auth/login", async (
@@ -134,12 +173,17 @@ app.MapPost("/api/auth/login", async (
         Convert.FromBase64String(user.PasswordHash));
     if (!ok) return Results.Unauthorized();
 
-    var access = jwt.IssueAccessToken(user);
+    var access  = jwt.IssueAccessToken(user);
     var refresh = refreshGen.NewRefreshToken();
     db.RefreshTokens.Add(new RefreshToken { Token = refresh, UserId = user.Id, CreatedUtc = DateTime.UtcNow });
     await db.SaveChangesAsync();
 
-    return Results.Ok(new { accessToken = access, refreshToken = refresh, user = new { user.Id, user.Name, user.Email, user.Role } });
+    return Results.Ok(new
+    {
+        accessToken = access,
+        refreshToken = refresh,
+        user = new { user.Id, user.Name, user.Email, user.Role }
+    });
 });
 
 app.MapPost("/api/auth/refresh", async (
@@ -148,7 +192,8 @@ app.MapPost("/api/auth/refresh", async (
     IJwtTokenService jwt,
     IRefreshTokenGenerator refreshGen) =>
 {
-    if (string.IsNullOrWhiteSpace(dto.RefreshToken)) return Results.BadRequest("refreshToken required.");
+    if (string.IsNullOrWhiteSpace(dto.RefreshToken))
+        return Results.BadRequest("refreshToken required.");
 
     var rt = await db.RefreshTokens.FirstOrDefaultAsync(r => r.Token == dto.RefreshToken);
     if (rt is null) return Results.Unauthorized();
@@ -174,10 +219,7 @@ app.MapGet("/api/auth/me", async (ClaimsPrincipal p, HealthDbContext db) =>
     var user = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == sub);
     if (user is null) return Results.Unauthorized();
 
-    var email = user.Email;
-    var name = user.Name ?? "";
-    var role = user.Role ?? "patient";
-    return Results.Ok(new { id = sub, name, email, role });
+    return Results.Ok(new { id = sub, name = user.Name ?? "", email = user.Email, role = user.Role ?? "patient" });
 }).RequireAuthorization();
 
 app.MapPost("/api/auth/logout", async ([FromBody] RefreshDto dto, HealthDbContext db) =>
@@ -191,7 +233,7 @@ app.MapPost("/api/auth/logout", async ([FromBody] RefreshDto dto, HealthDbContex
     return Results.Ok();
 });
 
-// ===== Data endpoints =====
+// --------------------- Data ---------------------
 app.MapGet("/api/doctors", async (HealthDbContext db) =>
 {
     var docs = await db.Doctors.AsNoTracking().ToListAsync();
@@ -211,6 +253,7 @@ app.MapGet("/api/appointments", async (HealthDbContext db) =>
             Time = a.Time
         })
         .ToListAsync();
+
     return Results.Ok(result);
 });
 
@@ -235,6 +278,7 @@ app.MapPost("/api/appointments", async ([FromBody] CreateAppointmentDto dto, Cla
         DoctorId = dto.DoctorId,
         Time = dto.Time
     };
+
     db.Appointments.Add(appt);
     await db.SaveChangesAsync();
 
@@ -246,6 +290,7 @@ app.MapPost("/api/appointments", async ([FromBody] CreateAppointmentDto dto, Cla
         DoctorName = doctor.Name,
         Time = appt.Time
     };
+
     return Results.Created($"/api/appointments/{appt.Id}", dtoOut);
 }).RequireAuthorization();
 

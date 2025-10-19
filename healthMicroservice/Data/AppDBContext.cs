@@ -28,7 +28,6 @@ namespace HealthApi.Data
 
             modelBuilder.Entity<RefreshToken>().HasIndex(r => r.Token).IsUnique();
 
-            // store Doctor.Slots as JSON (supported on PostgreSQL)
             modelBuilder.Entity<Doctor>()
                 .Property(d => d.Slots)
                 .HasColumnType("text[]");
