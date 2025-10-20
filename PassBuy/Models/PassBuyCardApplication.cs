@@ -28,7 +28,6 @@ namespace PassBuy.Models
 
         // Details should be provided according to the type of application
         // For Education Concession: EducationDetails
-        // For Youth and Pensioner Concession: GovIDDetails
         // For TransportEmployee: TransportEmployer Details
         // Providing details that do not match with the concession type is disallowed
         public EducationDetails? EducationDetails { get; set; }

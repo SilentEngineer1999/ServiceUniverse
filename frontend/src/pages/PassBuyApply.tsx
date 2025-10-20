@@ -20,6 +20,8 @@ import {
   ToggleButtonGroup,
   Link as MLink,
 } from "@mui/material";
+import { useNavigate } from "react-router-dom";
+
 
 const API_URL = "http://localhost:5101";
 const api = axios.create({ baseURL: API_URL });
@@ -35,6 +37,8 @@ function formatIsoDate(d: string | Date): string {
 }
 
 export default function PassBuyApply() {
+  const navigate = useNavigate();
+  
   // Which card type the user wants to apply for
   const [cardType, setCardType] = useState<"standard" | "education" | "transport" | "youth" | "pensioner">("standard");
 
@@ -49,6 +53,22 @@ export default function PassBuyApply() {
 
   const token = localStorage.getItem("token");
   const notAuthed = !token;
+
+  async function submitCard(path: string, params: any) {
+    if (notAuthed) {
+      openSnack("Please sign in first.", "info");
+      return;
+    }
+    try {
+      await api.post(path, null, { params, headers: getAuthHeaders() });
+      openSnack("Application submitted.", "success");
+      setTimeout(() => {
+        navigate("/PassBuy/fulfillment");
+      }, 2000);
+    } catch (e) {
+      openSnack(describeError(e, "Application failed"), "error");
+    }
+  }
 
   // ---- submitters ----
   async function applyStandard() {
@@ -80,19 +100,6 @@ export default function PassBuyApply() {
       cardType: cardTypeValue,
     };
     await submitCard("/PassBuy/newCard/concession", params);
-  }
-
-  async function submitCard(path: string, params: any) {
-    if (notAuthed) {
-      openSnack("Please sign in first.", "info");
-      return;
-    }
-    try {
-      await api.post(path, null, { params, headers: getAuthHeaders() });
-      openSnack("Application submitted.", "success");
-    } catch (e) {
-      openSnack(describeError(e, "Application failed"), "error");
-    }
   }
 
   return (

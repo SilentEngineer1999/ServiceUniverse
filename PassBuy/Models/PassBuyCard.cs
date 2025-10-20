@@ -17,5 +17,16 @@ namespace PassBuy.Models
         public DateTime DateApproved { get; set; } = DateTime.UtcNow;
 
         public PassBuyCardApplication? Application { get; set; }
+
+        // Top-up settings
+        public string TopUpMode { get; set; } = "manual"; // manual | auto | scheduled
+
+        public decimal? AutoThreshold { get; set; }
+
+        public decimal? TopUpAmount { get; set; }
+
+        public string? TopUpSchedule { get; set; } // weekly | monthly
+
+        public string BankAccount { get; set; }
     }
 }
