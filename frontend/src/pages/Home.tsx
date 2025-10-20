@@ -12,10 +12,10 @@ export default function Home() {
             <nav><a href="/auth"><ServiceCard text={"Utility Payment Service"} color={"green"} Icon={TungstenIcon}/></a></nav>
         </Grid>
         <Grid size={3}>
-            <ServiceCard text={"Health Service"} color={""}/>
+          <ServiceCard text={"Health Service"} color={""} />
         </Grid>
         <Grid size={3}>
-            <ServiceCard text={"PassBuy Service"} color={""}/>
+            <nav><a href="/PassBuy/auth"><ServiceCard text={"PassBuy Service"} color={"red"} Icon={TungstenIcon}/></a></nav>
         </Grid>
       </Grid>
     </Box>

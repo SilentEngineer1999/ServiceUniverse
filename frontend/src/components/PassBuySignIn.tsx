@@ -19,12 +19,12 @@ export default function SignIn({ onclick }: SignInProps) {
     try {
       // ✅ Send as query params since .NET expects them as (string email, string password)
       const response = await axios.post(
-        `http://localhost:5101/signIn?email=${encodeURIComponent(email)}&password=${encodeURIComponent(password)}`
+        `http://localhost:5101/PassBuy/signIn?email=${encodeURIComponent(email)}&password=${encodeURIComponent(password)}`
       );
 
       console.log("Sign in success:", response.data);
       localStorage.setItem("token", response.data.token);
-      navigate("/utilities");
+      navigate("/PassBuy/apply");
     } catch (error: any) {
       console.error("Sign in failed:", error.response?.data || error.message);
       alert("Invalid credentials or server error");

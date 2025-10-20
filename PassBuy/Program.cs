@@ -13,11 +13,9 @@ using System.Reflection.Metadata;
 using System.Security.Cryptography.X509Certificates;
 using System.IdentityModel.Tokens.Jwt;
 
-
 var builder = WebApplication.CreateBuilder(args);
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 var cfg = builder.Configuration;
-
 
 // JWT variables
 var jwtKey      = cfg["Jwt:Key"]      ?? throw new InvalidOperationException("Missing Jwt:Key");
@@ -52,6 +50,19 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 // Add services to the container.
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
+
+// Add CORS policy
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowFrontend",
+        policy =>
+        {
+            policy.WithOrigins("http://localhost:5173") // React app
+                  .AllowAnyHeader()
+                  .AllowAnyMethod();
+                  // .AllowCredentials() // not needed for bearer tokens; enable only if using cookies
+        });
+});
 
 var app = builder.Build();
 
@@ -91,8 +102,6 @@ using (var scope = app.Services.CreateScope())
             " If Migrations exist, please restart the server.");
         Console.ResetColor();
     }
-
-    // If the migrations were successful, seed the database
     else
     {
         DbSeeder.SeedEducationProviders(db);
@@ -104,9 +113,18 @@ using (var scope = app.Services.CreateScope())
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
+    // In dev, skip HTTPS redirection to avoid CORS+redirect header issues
+}
+else
+{
+    app.UseHttpsRedirection();
 }
 
-app.UseHttpsRedirection();
+// ---- Enable CORS for the frontend (must be before endpoints) ----
+app.UseCors("AllowFrontend");
+
+app.UseAuthentication();
+app.UseAuthorization();
 
 PasswordManager passwordManager = new();
 
@@ -154,7 +172,10 @@ app.MapPost("/PassBuy/signIn", async (AppDbContext db, IConfiguration cfg, strin
             return Results.Json(new { message = "Incorrect Password" }, statusCode: 401);
 
         var token = JwtIssuer.Issue(user.Id, email, cfg);
-        return Results.Ok(new { message = "User Authenticated", token });
+
+        // Return 201 Created (as requested)
+        return Results.Created($"/PassBuy/sessions/{Guid.NewGuid()}",
+            new { message = "User Authenticated", token });
     }
     catch (Exception ex)
     {
@@ -265,7 +286,6 @@ app.MapPost("/PassBuy/newCard/education", async (AppDbContext db, HttpContext co
 })
 .WithName("newCard/education");
 
-
 app.MapPost("/PassBuy/newCard/transportEmployee", async (AppDbContext db, HttpContext context, IHttpClientFactory httpClientFactory,
             string employer, int employeeNumber ) =>
 {
@@ -329,7 +349,6 @@ app.MapPost("/PassBuy/newCard/transportEmployee", async (AppDbContext db, HttpCo
     }
 })
 .WithName("newCard/transportEmployee");
-
 
 app.MapPost("/PassBuy/newCard/concession", async (AppDbContext db, HttpContext context, IHttpClientFactory httpClientFactory,
             DateTime DoB, string fullLegalName, int cardType ) =>
