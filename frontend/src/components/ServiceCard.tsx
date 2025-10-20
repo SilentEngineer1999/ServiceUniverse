@@ -1,5 +1,5 @@
 import { Avatar, Card, Typography, Box } from "@mui/material";
-import type { SvgIconComponent } from "@mui/icons-material"; // ✅ type-only import
+import type { SvgIconComponent } from "@mui/icons-material"; // type-only import
 
 type ServiceCardProps = {
   text: string;

@@ -5,6 +5,7 @@ import Utilities from "./pages/Utilities";
 import Success from "./pages/Success";
 import PassBuyAuth from "./pages/PassBuyAuth";
 import PassBuyApply from "./pages/PassBuyApply";
+import HealthApp from "./health/App";
 
 export default function App() {
   return (
@@ -16,6 +17,7 @@ export default function App() {
         <Route path="/success" element={<Success />} />
         <Route path="/PassBuy/auth" element={<PassBuyAuth />} />
         <Route path="/PassBuy/apply" element={<PassBuyApply />} />
+        <Route path="/Health" element={<HealthApp/>} />
       </Routes>
     </div>
   );
