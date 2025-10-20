@@ -592,4 +592,28 @@ app.MapPost("/PassBuy/cards/{cardId:int}/delete", async (AppDbContext db, HttpCo
 .WithName("DeletePassBuyCard");
 
 
+// List education providers (id, name, eduCode)
+app.MapGet("/PassBuy/educationProviders", async (AppDbContext db) =>
+{
+    var list = await db.EducationProviders
+        .OrderBy(p => p.Name)
+        .Select(p => new { id = p.Id, name = p.Name, eduCode = p.EduCode })
+        .ToListAsync();
+    return Results.Ok(list);
+})
+.WithName("ListEducationProviders");
+
+
+// List transport employers (id, name)
+app.MapGet("/PassBuy/transportEmployers", async (AppDbContext db) =>
+{
+    var list = await db.TransportEmployers
+        .OrderBy(t => t.Name)
+        .Select(t => new { id = t.Id, name = t.Name })
+        .ToListAsync();
+    return Results.Ok(list);
+})
+.WithName("ListTransportEmployers");
+
+
 app.Run();
