@@ -566,4 +566,30 @@ app.MapMethods("/PassBuy/applications/stale", new[] { "DELETE", "POST" }, async 
 });
 
 
+// Delete PassBuy card
+app.MapPost("/PassBuy/cards/{cardId:int}/delete", async (AppDbContext db, HttpContext context, int cardId) =>
+{
+    var authHeader = context.Request.Headers["Authorization"].ToString();
+    if (!authHeader.StartsWith("Bearer ")) return Results.Unauthorized();
+
+    var token = authHeader["Bearer ".Length..].Trim();
+    var principal = ValidateJwt.ValidateJwtToken(token, cfg);
+
+    var sub = principal.FindFirst(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Sub)?.Value;
+    if (!Guid.TryParse(sub, out var userId)) return Results.Unauthorized();
+
+    var card = await db.PassBuyCards
+        .Where(c => c.Id == cardId && c.UserId == userId)
+        .FirstOrDefaultAsync();
+
+    if (card is null) return Results.NotFound("Card not found");
+
+    db.PassBuyCards.Remove(card);
+    await db.SaveChangesAsync();
+
+    return Results.Ok(new { deleted = true, cardId });
+})
+.WithName("DeletePassBuyCard");
+
+
 app.Run();

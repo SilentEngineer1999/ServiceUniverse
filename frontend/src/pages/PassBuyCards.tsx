@@ -20,9 +20,12 @@ import {
   Alert,
   Button,
   Stack,
+  IconButton,
 } from "@mui/material";
 import CreditCardIcon from "@mui/icons-material/CreditCard";
 import AddCircleOutlineIcon from "@mui/icons-material/AddCircleOutline";
+import ArrowBackIcon from "@mui/icons-material/ArrowBack";
+import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 
 const API_URL = "http://localhost:5101";
 const api = axios.create({ baseURL: API_URL });
@@ -94,6 +97,22 @@ export default function PassBuyCards() {
     load();
   }, []);
 
+  async function handleDelete(id: number) {
+    const ok = window.confirm("Delete this card? This cannot be undone.");
+    if (!ok) return;
+    try {
+      const resp = await api.post(`/PassBuy/cards/${id}/delete`, null, { headers: authHeaders() });
+      if (resp.status === 200) {
+        setCards((prev) => prev.filter((c) => c.id !== id));
+      } else {
+        alert("Failed to delete card.");
+      }
+    } catch (e: any) {
+      console.error("Delete failed:", e?.response?.data || e?.message || e);
+      alert("Failed to delete card.");
+    }
+  }
+
   return (
     <Box
       sx={{
@@ -111,9 +130,19 @@ export default function PassBuyCards() {
         justifyContent="space-between"
         sx={{ width: "100%", maxWidth: 1100, mb: 2 }}
       >
-        <Typography variant="h3" sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-          <CreditCardIcon /> Your PassBuy Cards
-        </Typography>
+        <Stack direction="row" spacing={1} alignItems="center">
+          <Button
+            variant="outlined"
+            startIcon={<ArrowBackIcon />}
+            href="/"
+            sx={{ textTransform: "none" }}
+          >
+            Back
+          </Button>
+          <Typography variant="h4" sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+            <CreditCardIcon /> Your PassBuy Cards
+          </Typography>
+        </Stack>
 
         <Button
           variant="contained"
@@ -166,6 +195,7 @@ export default function PassBuyCards() {
                 <TableCell>Amount / Threshold</TableCell>
                 <TableCell>Schedule</TableCell>
                 <TableCell>Bank</TableCell>
+                <TableCell align="right">Delete</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
@@ -191,6 +221,11 @@ export default function PassBuyCards() {
                     </TableCell>
                     <TableCell>{c.topUpSchedule ?? "—"}</TableCell>
                     <TableCell>{c.bankAccount}</TableCell>
+                    <TableCell align="right">
+                      <IconButton aria-label="Delete card" onClick={() => handleDelete(c.id)}>
+                        <DeleteOutlineIcon color="error" />
+                      </IconButton>
+                    </TableCell>
                   </TableRow>
                 );
               })}
