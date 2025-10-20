@@ -1,23 +1,25 @@
 using PassBuy.AuthController;
 using PassBuy.Data;
-using Npgsql;
 using Microsoft.EntityFrameworkCore;
-using Npgsql.EntityFrameworkCore.PostgreSQL;
+using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
 using PassBuy.Models;
 using System.Globalization;
 using System.Reflection.Metadata;
-
+using System.Security.Cryptography.X509Certificates;
+using System.IdentityModel.Tokens.Jwt;
 
 var builder = WebApplication.CreateBuilder(args);
-var connectionString = builder.Configuration.GetConnectionString("Default");
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 var cfg = builder.Configuration;
 
 // JWT variables
 var jwtKey      = cfg["Jwt:Key"]      ?? throw new InvalidOperationException("Missing Jwt:Key");
-var jwtIssuer   = cfg["Jwt:Issuer"]   ?? "PassBuy";
+var jwtIssuer   = cfg["Jwt:Issuer"]   ?? "ServiceUniverse";
 var jwtAudience = cfg["Jwt:Audience"] ?? "PassBuyClients";
 
 builder.Services
@@ -26,15 +28,21 @@ builder.Services
     {
         options.TokenValidationParameters = new()
         {
-            ValidateIssuer = true, ValidateAudience = true,
-            ValidateLifetime = true, ValidateIssuerSigningKey = true,
-            ValidIssuer = jwtIssuer, ValidAudience = jwtAudience,
+            ValidateIssuer = true,
+            ValidateAudience = true,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            ValidIssuer = jwtIssuer,
+            ValidAudience = jwtAudience,
             IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)),
             ClockSkew = TimeSpan.FromSeconds(30) // small leeway
         };
     });
 
 builder.Services.AddAuthorization();
+
+// HttpClient for authentication validation
+builder.Services.AddHttpClient();
 
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(connectionString));
@@ -43,26 +51,61 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
 
+// Add CORS policy
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowFrontend",
+        policy =>
+        {
+            policy.WithOrigins("http://localhost:5173") // React app
+                  .AllowAnyHeader()
+                  .AllowAnyMethod();
+                  // .AllowCredentials() // not needed for bearer tokens; enable only if using cookies
+        });
+});
+
 var app = builder.Build();
 
-// Ensure DB + tables exist
+// Database pre-processing
 using (var scope = app.Services.CreateScope())
 {
+    // Get the database
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
+    // Flag to check if database connected
+    bool success = false;
+
     // Try 10 times to apply migrations if there are any
-    for (var attempt = 1; attempt <= 10; attempt++)
+    Console.WriteLine("Looking for migrations");
+    for (var attempt = 1; attempt <= 10 && !success; attempt++)
     {
         try
         {
-            db.Database.Migrate(); // if there are no migrations, will pass gracefully, won't throw
-            break;
+            // if there are no migrations, will pass gracefully, won't throw
+            db.Database.Migrate();
+            Console.WriteLine("Migrations successfully applied / or there were no migrations");
+            success = true;
         }
-        catch (Exception ex) when (attempt < 10)
+        catch (Exception ex)
         {
-            Console.WriteLine($"⚠️  Attempt {attempt}: DB not ready yet ({ex.Message}). Retrying in 2s...");
+            Console.WriteLine($"Migration attempt {attempt}: DB not ready yet ({ex.Message}). Retrying in 2s...");
+            success = false;
             await Task.Delay(2000);  // wait 2s then try again
         }
+    }
+
+    // If it didn't manage to connect after the loop, raise a warning (but it will still run)
+    if (!success)
+    {
+        Console.ForegroundColor = ConsoleColor.Yellow;
+        Console.WriteLine("Database failed to connect. No migrations have been applied." +
+            " If Migrations exist, please restart the server.");
+        Console.ResetColor();
+    }
+    else
+    {
+        DbSeeder.SeedEducationProviders(db);
+        DbSeeder.SeedTransportEmployers(db);
     }
 }
 
@@ -70,9 +113,18 @@ using (var scope = app.Services.CreateScope())
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
+    // In dev, skip HTTPS redirection to avoid CORS+redirect header issues
+}
+else
+{
+    app.UseHttpsRedirection();
 }
 
-app.UseHttpsRedirection();
+// ---- Enable CORS for the frontend (must be before endpoints) ----
+app.UseCors("AllowFrontend");
+
+app.UseAuthentication();
+app.UseAuthorization();
 
 PasswordManager passwordManager = new();
 
@@ -120,7 +172,10 @@ app.MapPost("/PassBuy/signIn", async (AppDbContext db, IConfiguration cfg, strin
             return Results.Json(new { message = "Incorrect Password" }, statusCode: 401);
 
         var token = JwtIssuer.Issue(user.Id, email, cfg);
-        return Results.Ok(new { message = "User Authenticated", token });
+
+        // Return 201 Created (as requested)
+        return Results.Created($"/PassBuy/sessions/{Guid.NewGuid()}",
+            new { message = "User Authenticated", token });
     }
     catch (Exception ex)
     {
@@ -129,54 +184,208 @@ app.MapPost("/PassBuy/signIn", async (AppDbContext db, IConfiguration cfg, strin
 })
 .WithName("SignIn");
 
-// I'll forget about this one for now
-// app.MapPost("/PassBuy/addDetails", async (AppDbContext db, string bankCard, string mailAddress)) =>
-// {
-
-// } 
-
 // ----------------------- ORDER A CARD ------------------
 
 app.MapPost("/PassBuy/newCard/standard", async (AppDbContext db, HttpContext context, IHttpClientFactory httpClientFactory) =>
 {
-    var userId = await JwtValidator.ValidateJwtWithUsersService(context, httpClientFactory);
-    if (userId == null) return Results.Unauthorized();
+    var authHeader = context.Request.Headers["Authorization"].ToString();
+    if (!authHeader.StartsWith("Bearer "))
+        return Results.Unauthorized();
+
+    var token = authHeader["Bearer ".Length..].Trim();
+    var principal = ValidateJwt.ValidateJwtToken(token, cfg);
+
+    var userIdString = principal.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
+    if (!Guid.TryParse(userIdString, out var userId))
+        return Results.Unauthorized();
 
     try
     {
-        var newCard = { userId = userId, CardType = 0 };
-        db.PassBuyCardApplication.Add(newCard);
+        var newCard = new PassBuyCardApplication {
+            UserId = userId,
+            CardType = CardType.Standard
+        };
+        db.PassBuyCardApplications.Add(newCard);
+        await db.SaveChangesAsync();
+
+        return Results.Created(
+            uri: (string?) null,
+            value: new { message = "New PassBuy Card application submitted. Class: Standard" }
+            );
     }
-}
+    catch (Exception ex)
+    {
+        return Results.Problem(ex.Message);
+    }
+})
+.WithName("newCard/standard");
 
 app.MapPost("/PassBuy/newCard/education", async (AppDbContext db, HttpContext context, IHttpClientFactory httpClientFactory,
-            Guid universityId, int stuNum, string courseCode, string courseTitle )) =>
+            string eduCode, int stuNum, int courseCode, string courseTitle ) =>
 {
-    var userId = await JwtValidator.ValidateJwtWithUsersService(context, httpClientFactory);
-    if (userId == null) return Results.Unauthorized();
+    var authHeader = context.Request.Headers["Authorization"].ToString();
+    if (!authHeader.StartsWith("Bearer "))
+        return Results.Unauthorized();
+
+    var token = authHeader["Bearer ".Length..].Trim();
+    var principal = ValidateJwt.ValidateJwtToken(token, cfg);
+
+    var userIdString = principal.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
+    if (!Guid.TryParse(userIdString, out var userId))
+        return Results.Unauthorized();
+
+    // begin transaction (with multiple steps)
+    await using var tx = await db.Database.BeginTransactionAsync();
 
     try
     {
-        var newCard = { User = userId, CardType = 1 };
+        var newCard = new PassBuyCardApplication {
+            UserId = userId,
+            CardType = CardType.EducationConcession
+        };
+        await db.SaveChangesAsync();
 
-        var educationProvider = await db.EducationProviders
-            .FirstOrDefaultAsync(e => e.Id == universityId);
+        // Find education provider
+        var provider = await db.EducationProviders.FirstOrDefaultAsync(e => e.EduCode == eduCode);
+        if (provider is null) return Results.NotFound("University not found"); //404
 
-        var eduDetails = {
-            educationProvider = educationProvider,
-            studentNumber = stuNum,
-            courseCode = courseCode,
-            courseTitle = courseTitle
-            }
-        newCard.user = userId;
-        db.PassBuyCardApplication.Add();
+        // Make Education Details object
+        var eduDetails = new EducationDetails
+        {
+            ApplicationId = newCard.Id,
+            ProviderId = provider.Id,
+            StudentNumber = stuNum,
+            CourseCode = courseCode,
+            CourseTitle = courseTitle
+        };
+
+        // Add education details to the card
+        newCard.EducationDetails = eduDetails;
+
+        // Adding newCard adds EducationDetails to the database as well
+        db.PassBuyCardApplications.Add(newCard);
+        await db.SaveChangesAsync();
+
+        // Commit the transaction
+        await tx.CommitAsync();
+
+        // This is where Education Details would be sent
+        // to the Educational Institution for Verification
+
+        return Results.Created(
+            uri: (string?) null,
+            value: new { message = "New PassBuy Concession Application approved! " +
+            "Class: Education" }
+            );
     }
-}
+    catch (Exception ex)
+    {
+        await tx.RollbackAsync(); // Rollback transaction
+        return Results.Problem(ex.Message);
+    }
+})
+.WithName("newCard/education");
 
-app,MapPost("/PassBuy/checkout", async (AppDbContext db, HttpContext context, IHttpClientFactory httpClientFactory,
-            string bankCard, int startingBalance, string mailAddress)) =>
+app.MapPost("/PassBuy/newCard/transportEmployee", async (AppDbContext db, HttpContext context, IHttpClientFactory httpClientFactory,
+            string employer, int employeeNumber ) =>
 {
-    
-}
+    var authHeader = context.Request.Headers["Authorization"].ToString();
+    if (!authHeader.StartsWith("Bearer "))
+        return Results.Unauthorized();
+
+    var token = authHeader["Bearer ".Length..].Trim();
+    var principal = ValidateJwt.ValidateJwtToken(token, cfg);
+
+    var userIdString = principal.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
+    if (!Guid.TryParse(userIdString, out var userId))
+        return Results.Unauthorized();
+
+    // begin transaction (with multiple steps)
+    await using var tx = await db.Database.BeginTransactionAsync();
+
+    try
+    {
+        var newCard = new PassBuyCardApplication {
+            UserId = userId,
+            CardType = CardType.TransportEmployeeConcession
+        };
+        await db.SaveChangesAsync();
+
+        // Find education provider
+        var transportEmployer = await db.TransportEmployers.FirstOrDefaultAsync(e => e.Name == employer);
+        if (transportEmployer is null) return Results.NotFound("Transport Employer not found"); //404
+
+        // Make Transport Employee Details object
+        var employeeDetails = new TransportEmploymentDetails
+        {
+            ApplicationId = newCard.Id,
+            EmployerId = transportEmployer.Id,
+            EmployeeNumber = employeeNumber
+        };
+
+        // Add education details to the card
+        newCard.TransportEmploymentDetails = employeeDetails;
+
+        // Adding newCard adds EducationDetails to the database as well
+        db.PassBuyCardApplications.Add(newCard);
+        await db.SaveChangesAsync();
+
+        // Commit the transaction
+        await tx.CommitAsync();
+
+        // This is where Transport Employment Details would be sent
+        // to the employer for verification
+
+        return Results.Created(
+            uri: (string?) null,
+            value: new { message = "New PassBuy Concession Application approved! " + 
+                    "Class: Transport Employee" }
+            );
+    }
+    catch (Exception ex)
+    {
+        await tx.RollbackAsync(); // Rollback transaction
+        return Results.Problem(ex.Message);
+    }
+})
+.WithName("newCard/transportEmployee");
+
+app.MapPost("/PassBuy/newCard/concession", async (AppDbContext db, HttpContext context, IHttpClientFactory httpClientFactory,
+            DateTime DoB, string fullLegalName, int cardType ) =>
+{
+    var authHeader = context.Request.Headers["Authorization"].ToString();
+    if (!authHeader.StartsWith("Bearer "))
+        return Results.Unauthorized();
+
+    var token = authHeader["Bearer ".Length..].Trim();
+    var principal = ValidateJwt.ValidateJwtToken(token, cfg);
+
+    var userIdString = principal.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
+    if (!Guid.TryParse(userIdString, out var userId))
+        return Results.Unauthorized();
+
+    try
+    {
+        var newCard = new PassBuyCardApplication {
+            UserId = userId,
+            CardType = (CardType)cardType
+        };
+        await db.SaveChangesAsync();
+
+        // Here is where GovID Details would be verified with Government Documents service
+        // and returned
+
+        return Results.Created(
+            uri: (string?) null,
+            value: new { message = "New PassBuy Concession Application approved! " + 
+                    $"Class: {(CardType)cardType}" }
+            );
+    }
+    catch (Exception ex)
+    {
+        return Results.Problem(ex.Message);
+    }
+})
+.WithName("newCard/concession");
 
 app.Run();

@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using PassBuy.Data;
@@ -11,9 +12,11 @@ using PassBuy.Data;
 namespace PassBuy.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20251018014833_BuildAPIs")]
+    partial class BuildAPIs
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -51,8 +54,7 @@ namespace PassBuy.Migrations
                     b.HasIndex("ApplicationId")
                         .IsUnique();
 
-                    b.HasIndex("ProviderId", "StudentNumber")
-                        .IsUnique();
+                    b.HasIndex("ProviderId");
 
                     b.ToTable("EducationDetails");
                 });
@@ -73,13 +75,29 @@ namespace PassBuy.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("EduCode")
-                        .IsUnique();
-
-                    b.HasIndex("Name")
-                        .IsUnique();
-
                     b.ToTable("EducationProviders");
+                });
+
+            modelBuilder.Entity("PassBuy.Models.GovIdDetails", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("ApplicationId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("BirthDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ApplicationId")
+                        .IsUnique();
+
+                    b.ToTable("GovIdDetails");
                 });
 
             modelBuilder.Entity("PassBuy.Models.PassBuyCard", b =>
@@ -152,9 +170,6 @@ namespace PassBuy.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("Name")
-                        .IsUnique();
-
                     b.ToTable("TransportEmployers");
                 });
 
@@ -172,7 +187,7 @@ namespace PassBuy.Migrations
                     b.Property<int>("EmployeeNumber")
                         .HasColumnType("integer");
 
-                    b.Property<Guid>("EmployerId")
+                    b.Property<Guid>("TransportEmployerId")
                         .HasColumnType("uuid");
 
                     b.HasKey("Id");
@@ -180,8 +195,7 @@ namespace PassBuy.Migrations
                     b.HasIndex("ApplicationId")
                         .IsUnique();
 
-                    b.HasIndex("EmployerId", "EmployeeNumber")
-                        .IsUnique();
+                    b.HasIndex("TransportEmployerId");
 
                     b.ToTable("TransportEmploymentDetails");
                 });
@@ -230,6 +244,13 @@ namespace PassBuy.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("PassBuy.Models.GovIdDetails", b =>
+                {
+                    b.HasOne("PassBuy.Models.PassBuyCardApplication", null)
+                        .WithOne("GovIdDetails")
+                        .HasForeignKey("PassBuy.Models.GovIdDetails", "ApplicationId");
+                });
+
             modelBuilder.Entity("PassBuy.Models.PassBuyCard", b =>
                 {
                     b.HasOne("PassBuy.Models.PassBuyCardApplication", "Application")
@@ -262,7 +283,7 @@ namespace PassBuy.Migrations
 
                     b.HasOne("PassBuy.Models.TransportEmployer", null)
                         .WithMany()
-                        .HasForeignKey("EmployerId")
+                        .HasForeignKey("TransportEmployerId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });
@@ -270,6 +291,8 @@ namespace PassBuy.Migrations
             modelBuilder.Entity("PassBuy.Models.PassBuyCardApplication", b =>
                 {
                     b.Navigation("EducationDetails");
+
+                    b.Navigation("GovIdDetails");
 
                     b.Navigation("TransportEmploymentDetails");
                 });

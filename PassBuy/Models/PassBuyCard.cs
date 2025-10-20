@@ -3,29 +3,19 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace PassBuy.Models
 {
-    public enum CardType
-    {
-        Standard,
-        EducationConcession,
-        YouthConcession,
-        PensionerConcession,
-        TransportEmployeeConcession
-    }
-
     public class PassBuyCard
     {
         [Key]
-        public int Id { get; set; } = null!;
+        public int Id { get; set; }
 
         [ForeignKey("User")]
-        public User User { get; set; } = null!;
+        public Guid UserId { get; set; }
 
         [Required]
-        public CardType CardType { get; set; } = null!;
+        public CardType CardType { get; set; }
 
         public DateTime DateApproved { get; set; } = DateTime.UtcNow;
 
-        [ForeignKey("ConcessionApplication")]
-        public ConcessionApplication? ConcessionApplication { get; set; } = null!;
+        public PassBuyCardApplication? Application { get; set; }
     }
 }

@@ -14,7 +14,7 @@ namespace backendServices.AuthController
 
             var claims = new[]
             {
-                new Claim("email", email), // ✅ use explicit key
+                new Claim("email", email),
                 new Claim("userId", userId.ToString()),
                 new Claim("name", firstName + " " + lastName),
                 new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())

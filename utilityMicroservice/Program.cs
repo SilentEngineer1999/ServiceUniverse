@@ -5,14 +5,16 @@ using backendServices.AuthController; // for JwtValidator
 using System.Threading;
 
 var builder = WebApplication.CreateBuilder(args);
+var cfg = builder.Configuration;
 
 // Users database
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseNpgsql("Host=db-utility;Port=5432;Database=usersdb;Username=postgres;Password=root"));
+    options.UseNpgsql(cfg.GetConnectionString("UsersDb")));
 
 // Utilities database
+
 builder.Services.AddDbContext<UtilityDbContext>(options =>
-    options.UseNpgsql("Host=db-utility;Port=5432;Database=postgres;Username=postgres;Password=root"));
+    options.UseNpgsql(cfg.GetConnectionString("UtilityDb")));
 
 // HttpClient for Users microservice validation
 builder.Services.AddHttpClient();
@@ -126,7 +128,7 @@ app.MapPost("/signIn", async (AppDbContext db, string email, string password) =>
 // -------------------- PROTECTED --------------------
 app.MapGet("/protected", (HttpContext context) =>
 {
-    // 1️⃣ Get Authorization header
+    // Get Authorization header
     if (!context.Request.Headers.TryGetValue("Authorization", out var authHeader)
         || !authHeader.ToString().StartsWith("Bearer "))
         return Results.Unauthorized();
@@ -135,14 +137,14 @@ app.MapGet("/protected", (HttpContext context) =>
 
     try
     {
-        // 2️⃣ Validate JWT and skip issuer/audience checks
+        // Validate JWT and skip issuer/audience checks
         var principal = ValidateJwt.ValidateJwtToken(token);
-        // 3️⃣ Extract claims
+        // Extract claims
         var userId = principal.FindFirst("userId")?.Value;
         var name = principal.FindFirst("name")?.Value;
         var email = principal.FindFirst("email")?.Value;
 
-        // 4️⃣ Return all claims
+        // Return all claims
         return Results.Ok(new { message = "Valid token", userId, name, email });
     }
     catch
@@ -152,7 +154,7 @@ app.MapGet("/protected", (HttpContext context) =>
 });
 
 
-// ✅ Fetch bills
+// Fetch bills
 app.MapGet("/fetchUtilityBill", async (HttpContext context, UtilityDbContext db, IHttpClientFactory httpClientFactory) =>
 {
     var userId = await JwtValidator.ValidateJwtWithUsersService(context, httpClientFactory);
@@ -182,7 +184,7 @@ app.MapGet("/fetchUtilityBill", async (HttpContext context, UtilityDbContext db,
         : Results.NotFound(new { message = "No utility records found for this user" });
 });
 
-// ✅ Confirm payment
+// -----------------------------CONFIRMPAYMENT------------------------------
 app.MapPost("/paymentConfirmed", async (HttpContext context, int utilityId, UtilityDbContext db, IHttpClientFactory httpClientFactory) =>
 {
     var userId = await JwtValidator.ValidateJwtWithUsersService(context, httpClientFactory);
@@ -200,7 +202,7 @@ app.MapPost("/paymentConfirmed", async (HttpContext context, int utilityId, Util
     return Results.Ok(new { message = "Payment confirmed, status updated to paid" });
 });
 
-// ✅ Add new utility bill
+// -----------------------------ADDUTILITYBILL------------------------------
 app.MapPost("/addUtilityBill", async (HttpContext context, Utility newBill, UtilityDbContext db, IHttpClientFactory httpClientFactory) =>
 {
     var userId = await JwtValidator.ValidateJwtWithUsersService(context, httpClientFactory);
