@@ -7,6 +7,7 @@ import PassBuyAuth from "./pages/PassBuyAuth";
 import PassBuyApply from "./pages/PassBuyApply";
 import PassBuyFulfilment from "./pages/PassBuyFulfillment";
 import PassBuyCards from "./pages/PassBuyCards";
+import HealthApp from "./health/App";
 
 export default function App() {
   return (
@@ -20,6 +21,7 @@ export default function App() {
         <Route path="/PassBuy/apply" element={<PassBuyApply />} />
         <Route path="/PassBuy/fulfillment" element={<PassBuyFulfilment />} />
         <Route path="/PassBuy/cards" element={<PassBuyCards />} />
+        <Route path="/Health" element={<HealthApp/>} />
       </Routes>
     </div>
   );

@@ -16,7 +16,7 @@ namespace backendServices.AuthController
 
             try
             {
-                var principal = ValidateJwt.ValidateJwtToken(token); // 🔹 reuse your local token validator
+                var principal = ValidateJwt.ValidateJwtToken(token); // reuse your local token validator
 
                 var userId = principal.FindFirst("userId")?.Value;
                 if (int.TryParse(userId, out var parsedId))
