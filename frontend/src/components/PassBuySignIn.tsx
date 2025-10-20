@@ -24,7 +24,7 @@ export default function SignIn({ onclick }: SignInProps) {
 
       console.log("Sign in success:", response.data);
       localStorage.setItem("token", response.data.token);
-      navigate("/PassBuy/apply");
+      navigate("/PassBuy/cards");
     } catch (error: any) {
       console.error("Sign in failed:", error.response?.data || error.message);
       alert("Invalid credentials or server error");

@@ -1,8 +1,8 @@
 // PassBuyApply.tsx — Application-only page (no sign up / sign in UI)
-// Updated: replaced 'Concession' tab with 'Youth' and 'Pensioner' tabs.
-// Each calls the same Concession API with different CardType values.
+// Uses dropdowns for Universities and Transport Employers.
+// Port: 5101
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import axios, { AxiosError } from "axios";
 import {
   Box,
@@ -19,7 +19,12 @@ import {
   ToggleButton,
   ToggleButtonGroup,
   Link as MLink,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
 } from "@mui/material";
+import { useNavigate } from "react-router-dom";
 
 const API_URL = "http://localhost:5101";
 const api = axios.create({ baseURL: API_URL });
@@ -34,15 +39,23 @@ function formatIsoDate(d: string | Date): string {
   return date.toISOString().slice(0, 10);
 }
 
+type EducationProvider = { id: number; name: string; eduCode: string };
+type TransportEmployer = { id: number; name: string };
+
 export default function PassBuyApply() {
-  // Which card type the user wants to apply for
+  const navigate = useNavigate();
+
   const [cardType, setCardType] = useState<"standard" | "education" | "transport" | "youth" | "pensioner">("standard");
 
-  // toast
   const [snack, setSnack] = useState({ open: false, msg: "", severity: "success" as "success" | "error" | "info" });
-  const openSnack = (msg: string, severity: "success" | "error" | "info" = "success") => setSnack({ open: true, msg, severity });
+  const openSnack = (msg: string, severity: "success" | "error" | "info" = "success") =>
+    setSnack({ open: true, msg, severity });
 
-  // forms for each type
+  // dropdown data
+  const [providers, setProviders] = useState<EducationProvider[]>([]);
+  const [employers, setEmployers] = useState<TransportEmployer[]>([]);
+
+  // forms
   const [edu, setEdu] = useState({ eduCode: "", stuNum: "", courseCode: "", courseTitle: "" });
   const [transport, setTransport] = useState({ employer: "", employeeNumber: "" });
   const [person, setPerson] = useState({ fullLegalName: "", DoB: formatIsoDate(new Date()) });
@@ -50,7 +63,37 @@ export default function PassBuyApply() {
   const token = localStorage.getItem("token");
   const notAuthed = !token;
 
-  // ---- submitters ----
+  useEffect(() => {
+    (async () => {
+      try {
+        const [p, t] = await Promise.all([
+          api.get("/PassBuy/educationProviders", { headers: getAuthHeaders() }),
+          api.get("/PassBuy/transportEmployers", { headers: getAuthHeaders() }),
+        ]);
+        setProviders(p.data as EducationProvider[]);
+        setEmployers(t.data as TransportEmployer[]);
+      } catch {
+        // fallback: empty (page still works, just no dropdown options)
+        setProviders([]);
+        setEmployers([]);
+      }
+    })();
+  }, []);
+
+  async function submitCard(path: string, params: any) {
+    if (notAuthed) {
+      openSnack("Please sign in first.", "info");
+      return;
+    }
+    try {
+      await api.post(path, null, { params, headers: getAuthHeaders() });
+      openSnack("Application submitted.", "success");
+      setTimeout(() => navigate("/PassBuy/fulfillment"), 1200);
+    } catch (e) {
+      openSnack(describeError(e, "Application failed"), "error");
+    }
+  }
+
   async function applyStandard() {
     await submitCard("/PassBuy/newCard/standard", {});
   }
@@ -82,23 +125,12 @@ export default function PassBuyApply() {
     await submitCard("/PassBuy/newCard/concession", params);
   }
 
-  async function submitCard(path: string, params: any) {
-    if (notAuthed) {
-      openSnack("Please sign in first.", "info");
-      return;
-    }
-    try {
-      await api.post(path, null, { params, headers: getAuthHeaders() });
-      openSnack("Application submitted.", "success");
-    } catch (e) {
-      openSnack(describeError(e, "Application failed"), "error");
-    }
-  }
-
   return (
     <Box sx={{ p: 3, maxWidth: 1000, mx: "auto" }}>
       <Typography variant="h4" sx={{ mb: 1 }}>PassBuy — Apply for a Card</Typography>
-      <Typography variant="body2" sx={{ mb: 2, opacity: 0.75 }}>Backend: <code>{API_URL}</code></Typography>
+      <Typography variant="body2" sx={{ mb: 2, opacity: 0.75 }}>
+        Backend: <code>{API_URL}</code>
+      </Typography>
 
       {notAuthed && (
         <Paper variant="outlined" sx={{ p: 2, mb: 3 }}>
@@ -112,7 +144,12 @@ export default function PassBuyApply() {
       <Card>
         <CardContent>
           <Typography variant="h6" gutterBottom>Choose a card type</Typography>
-          <ToggleButtonGroup value={cardType} exclusive onChange={(_,v)=>v&&setCardType(v)} sx={{ mb: 2, flexWrap:"wrap" }}>
+          <ToggleButtonGroup
+            value={cardType}
+            exclusive
+            onChange={(_, v) => v && setCardType(v)}
+            sx={{ mb: 2, flexWrap: "wrap" }}
+          >
             <ToggleButton value="standard">Standard</ToggleButton>
             <ToggleButton value="education">Education</ToggleButton>
             <ToggleButton value="transport">Transport</ToggleButton>
@@ -124,43 +161,149 @@ export default function PassBuyApply() {
 
           {cardType === "standard" && (
             <Box>
-              <Typography variant="body2" sx={{ mb: 2 }}>Apply for a standard PassBuy card.</Typography>
-              <Button variant="contained" disabled={notAuthed} onClick={applyStandard}>Apply — Standard</Button>
+              <Typography variant="body2" sx={{ mb: 2 }}>
+                Apply for a standard PassBuy card.
+              </Typography>
+              <Button variant="contained" disabled={notAuthed} onClick={applyStandard}>
+                Apply — Standard
+              </Button>
             </Box>
           )}
 
           {cardType === "education" && (
             <Grid container spacing={2}>
-              <Grid item xs={12} md={6}><TextField label="Education code (eduCode)" fullWidth value={edu.eduCode} onChange={e=>setEdu({...edu,eduCode:e.target.value})} /></Grid>
-              <Grid item xs={12} md={6}><TextField label="Student number" type="number" fullWidth value={edu.stuNum} onChange={e=>setEdu({...edu,stuNum:e.target.value})} /></Grid>
-              <Grid item xs={12} md={6}><TextField label="Course code (number)" type="number" fullWidth value={edu.courseCode} onChange={e=>setEdu({...edu,courseCode:e.target.value})} /></Grid>
-              <Grid item xs={12} md={6}><TextField label="Course title" fullWidth value={edu.courseTitle} onChange={e=>setEdu({...edu,courseTitle:e.target.value})} /></Grid>
-              <Grid item xs={12}><Button variant="contained" disabled={notAuthed} onClick={applyEducation}>Apply — Education</Button></Grid>
+              <Grid item xs={12} md={6}>
+                <FormControl fullWidth>
+                  <InputLabel id="provider-label">University</InputLabel>
+                  <Select
+                    labelId="provider-label"
+                    label="University"
+                    value={edu.eduCode}
+                    onChange={(e) => setEdu({ ...edu, eduCode: e.target.value as string })}
+                  >
+                    {providers.map((p) => (
+                      <MenuItem key={p.id} value={p.eduCode}>
+                        {p.name} ({p.eduCode})
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Grid>
+              <Grid item xs={12} md={6}>
+                <TextField
+                  label="Student number"
+                  type="number"
+                  fullWidth
+                  value={edu.stuNum}
+                  onChange={(e) => setEdu({ ...edu, stuNum: e.target.value })}
+                />
+              </Grid>
+              <Grid item xs={12} md={6}>
+                <TextField
+                  label="Course code (number)"
+                  type="number"
+                  fullWidth
+                  value={edu.courseCode}
+                  onChange={(e) => setEdu({ ...edu, courseCode: e.target.value })}
+                />
+              </Grid>
+              <Grid item xs={12} md={6}>
+                <TextField
+                  label="Course title"
+                  fullWidth
+                  value={edu.courseTitle}
+                  onChange={(e) => setEdu({ ...edu, courseTitle: e.target.value })}
+                />
+              </Grid>
+              <Grid item xs={12}>
+                <Button variant="contained" disabled={notAuthed} onClick={applyEducation}>
+                  Apply — Education
+                </Button>
+              </Grid>
             </Grid>
           )}
 
           {cardType === "transport" && (
             <Grid container spacing={2}>
-              <Grid item xs={12} md={6}><TextField label="Employer" fullWidth value={transport.employer} onChange={e=>setTransport({...transport,employer:e.target.value})} /></Grid>
-              <Grid item xs={12} md={6}><TextField label="Employee number" type="number" fullWidth value={transport.employeeNumber} onChange={e=>setTransport({...transport,employeeNumber:e.target.value})} /></Grid>
-              <Grid item xs={12}><Button variant="contained" disabled={notAuthed} onClick={applyTransport}>Apply — Transport Employee</Button></Grid>
+              <Grid item xs={12} md={6}>
+                <FormControl fullWidth>
+                  <InputLabel id="employer-label">Transport employer</InputLabel>
+                  <Select
+                    labelId="employer-label"
+                    label="Transport employer"
+                    value={transport.employer}
+                    onChange={(e) => setTransport({ ...transport, employer: e.target.value as string })}
+                  >
+                    {employers.map((t) => (
+                      <MenuItem key={t.id} value={t.name}>
+                        {t.name}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Grid>
+              <Grid item xs={12} md={6}>
+                <TextField
+                  label="Employee number"
+                  type="number"
+                  fullWidth
+                  value={transport.employeeNumber}
+                  onChange={(e) => setTransport({ ...transport, employeeNumber: e.target.value })}
+                />
+              </Grid>
+              <Grid item xs={12}>
+                <Button variant="contained" disabled={notAuthed} onClick={applyTransport}>
+                  Apply — Transport Employee
+                </Button>
+              </Grid>
             </Grid>
           )}
 
           {(cardType === "youth" || cardType === "pensioner") && (
             <Grid container spacing={2}>
-              <Grid item xs={12} md={6}><TextField label="Full legal name" fullWidth value={person.fullLegalName} onChange={e=>setPerson({...person,fullLegalName:e.target.value})} /></Grid>
-              <Grid item xs={12} md={6}><TextField label="Date of birth" type="date" fullWidth InputLabelProps={{ shrink: true }} value={person.DoB} onChange={e=>setPerson({...person,DoB:e.target.value})} /></Grid>
-              <Grid item xs={12}><Button variant="contained" disabled={notAuthed} onClick={()=>applyConcession(cardType === "youth" ? 2 : 3)}>
-                Apply — {cardType === "youth" ? "Youth Concession" : "Pensioner Concession"}
-              </Button></Grid>
+              <Grid item xs={12} md={6}>
+                <TextField
+                  label="Full legal name"
+                  fullWidth
+                  value={person.fullLegalName}
+                  onChange={(e) => setPerson({ ...person, fullLegalName: e.target.value })}
+                />
+              </Grid>
+              <Grid item xs={12} md={6}>
+                <TextField
+                  label="Date of birth"
+                  type="date"
+                  fullWidth
+                  InputLabelProps={{ shrink: true }}
+                  value={person.DoB}
+                  onChange={(e) => setPerson({ ...person, DoB: e.target.value })}
+                />
+              </Grid>
+              <Grid item xs={12}>
+                <Button
+                  variant="contained"
+                  disabled={notAuthed}
+                  onClick={() => applyConcession(cardType === "youth" ? 2 : 3)}
+                >
+                  Apply — {cardType === "youth" ? "Youth Concession" : "Pensioner Concession"}
+                </Button>
+              </Grid>
             </Grid>
           )}
         </CardContent>
       </Card>
 
-      <Snackbar open={snack.open} autoHideDuration={3500} onClose={()=>setSnack(s=>({...s,open:false}))}>
-        <Alert onClose={()=>setSnack(s=>({...s,open:false}))} severity={snack.severity} variant="filled" sx={{ width: '100%' }}>
+      <Snackbar
+        open={snack.open}
+        autoHideDuration={3500}
+        onClose={() => setSnack((s) => ({ ...s, open: false }))}
+      >
+        <Alert
+          onClose={() => setSnack((s) => ({ ...s, open: false }))}
+          severity={snack.severity}
+          variant="filled"
+          sx={{ width: "100%" }}
+        >
           {snack.msg}
         </Alert>
       </Snackbar>

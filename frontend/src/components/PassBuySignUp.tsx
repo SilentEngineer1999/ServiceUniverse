@@ -24,7 +24,7 @@ export default function SignUp({ onclick }: SignUpProps) {
     }
 
     try {
-      const response = await axios.post("http://localhost:5101/signUp", null, {
+      const response = await axios.post("http://localhost:5101/PassBuy/signUp", null, {
         params: {
           fname,
           lname,
@@ -36,7 +36,7 @@ export default function SignUp({ onclick }: SignUpProps) {
 
       console.log("Sign up success:", response.data);
       localStorage.setItem("token", response.data.token);
-      navigate("/utilities");
+      navigate("/PassBuy/cards");
     } catch (error: any) {
       console.error("Sign up failed:", error.response?.data || error.message);
       alert("Failed to sign up. Please try again.");

@@ -351,7 +351,7 @@ app.MapPost("/PassBuy/newCard/transportEmployee", async (AppDbContext db, HttpCo
 .WithName("newCard/transportEmployee");
 
 app.MapPost("/PassBuy/newCard/concession", async (AppDbContext db, HttpContext context, IHttpClientFactory httpClientFactory,
-            DateTime DoB, string fullLegalName, int cardType ) =>
+            DateTime DoB, string fullLegalName, int cardType) =>
 {
     var authHeader = context.Request.Headers["Authorization"].ToString();
     if (!authHeader.StartsWith("Bearer "))
@@ -366,7 +366,8 @@ app.MapPost("/PassBuy/newCard/concession", async (AppDbContext db, HttpContext c
 
     try
     {
-        var newCard = new PassBuyCardApplication {
+        var newCard = new PassBuyCardApplication
+        {
             UserId = userId,
             CardType = (CardType)cardType
         };
@@ -376,9 +377,12 @@ app.MapPost("/PassBuy/newCard/concession", async (AppDbContext db, HttpContext c
         // and returned
 
         return Results.Created(
-            uri: (string?) null,
-            value: new { message = "New PassBuy Concession Application approved! " + 
-                    $"Class: {(CardType)cardType}" }
+            uri: (string?)null,
+            value: new
+            {
+                message = "New PassBuy Concession Application approved! " +
+                    $"Class: {(CardType)cardType}"
+            }
             );
     }
     catch (Exception ex)
@@ -387,5 +391,229 @@ app.MapPost("/PassBuy/newCard/concession", async (AppDbContext db, HttpContext c
     }
 })
 .WithName("newCard/concession");
+
+// Fulfillment
+// Approves user's most recent Pending application (or a specific one if provided)
+// and issues a PassBuyCard linked to it.
+app.MapPost("/PassBuy/fulfilment", async (
+    AppDbContext db,
+    HttpContext context,
+    int? applicationId,
+    string address,
+    string city,
+    string state,
+    string postcode,
+    string country,
+    string? topupMode,
+    decimal? autoThreshold,
+    decimal? autoAmount,
+    string? scheduleCadence,
+    decimal? scheduleAmount,
+    string? bankAccountId,
+    string? bankAccount
+) =>
+{
+    var authHeader = context.Request.Headers["Authorization"].ToString();
+    if (!authHeader.StartsWith("Bearer ")) return Results.Unauthorized();
+
+    var token = authHeader["Bearer ".Length..].Trim();
+    var principal = ValidateJwt.ValidateJwtToken(token, cfg);
+
+    var userIdString = principal.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
+    if (!Guid.TryParse(userIdString, out var userId)) return Results.Unauthorized();
+
+    var bankValue = bankAccount ?? bankAccountId;
+    if (string.IsNullOrWhiteSpace(bankValue))
+        return Results.BadRequest("Bank account is required.");
+
+    var query = db.PassBuyCardApplications
+        .Where(a => a.UserId == userId && a.status == "Pending");
+
+    if (applicationId.HasValue)
+        query = query.Where(a => a.Id == applicationId.Value);
+
+    var appRow = await query.OrderByDescending(a => a.DateApplied).FirstOrDefaultAsync();
+    if (appRow is null) return Results.NotFound("No pending application found to fulfil.");
+
+    appRow.status = "Approved";
+
+    var mode = string.IsNullOrWhiteSpace(topupMode) ? "manual" : topupMode.Trim().ToLowerInvariant();
+    decimal? amount = mode == "auto" ? autoAmount
+                      : mode == "scheduled" ? scheduleAmount
+                      : null;
+
+    var card = new PassBuyCard
+    {
+        UserId = userId,
+        CardType = appRow.CardType,
+        Application = appRow,
+        TopUpMode = mode,
+        AutoThreshold = mode == "auto" ? autoThreshold : null,
+        TopUpAmount = amount,
+        TopUpSchedule = mode == "scheduled" ? scheduleCadence : null,
+        BankAccount = bankValue
+    };
+
+    db.PassBuyCards.Add(card);
+    await db.SaveChangesAsync();
+
+    return Results.Created($"/PassBuy/cards/{card.Id}", new
+    {
+        message = "Application approved and card issued.",
+        cardId = card.Id,
+        applicationId = appRow.Id,
+        cardType = appRow.CardType.ToString(),
+        topUp = new
+        {
+            mode = card.TopUpMode,
+            threshold = card.AutoThreshold,
+            amount = card.TopUpAmount,
+            schedule = card.TopUpSchedule,
+            bank = card.BankAccount
+        }
+    });
+})
+.WithName("PassBuyFulfilment");
+
+
+// List cards
+app.MapGet("/PassBuy/cards", async (AppDbContext db, HttpContext context) =>
+{
+    var authHeader = context.Request.Headers["Authorization"].ToString();
+    if (!authHeader.StartsWith("Bearer ")) return Results.Unauthorized();
+
+    var token = authHeader["Bearer ".Length..].Trim();
+    var principal = ValidateJwt.ValidateJwtToken(token, cfg);
+
+    var userIdString = principal.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
+    if (!Guid.TryParse(userIdString, out var userId)) return Results.Unauthorized();
+
+    var cards = await db.PassBuyCards
+        .Where(c => c.UserId == userId)
+        .OrderByDescending(c => c.DateApproved)
+        .Select(c => new
+        {
+            id = c.Id,
+            userId = c.UserId,
+            cardType = c.CardType.ToString(),
+            dateApproved = c.DateApproved,
+            topUpMode = c.TopUpMode,
+            autoThreshold = c.AutoThreshold,
+            topUpAmount = c.TopUpAmount,
+            topUpSchedule = c.TopUpSchedule,
+            bankAccount = c.BankAccount,
+            applicationId = c.Application != null ? c.Application.Id : (int?)null
+        })
+        .ToListAsync();
+
+    return Results.Ok(cards);
+})
+.WithName("ListUserCards");
+
+
+// Deletes all Pending PassBuyCardApplications for the authenticated user.
+app.MapMethods("/PassBuy/applications/stale", new[] { "DELETE", "POST" }, async (AppDbContext db, HttpContext context) =>
+{
+    Console.WriteLine("→ /PassBuy/applications/stale called");
+
+    var authHeader = context.Request.Headers["Authorization"].ToString();
+    if (!authHeader.StartsWith("Bearer ")) return Results.Unauthorized();
+
+    var token = authHeader["Bearer ".Length..].Trim();
+    var principal = ValidateJwt.ValidateJwtToken(token, cfg);
+
+    var sub = principal.FindFirst(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Sub)?.Value;
+    if (!Guid.TryParse(sub, out var userId)) return Results.Unauthorized();
+
+    // Pending app ids
+    var pendingIds = await db.PassBuyCardApplications
+        .Where(a => a.UserId == userId && a.status == "Pending")
+        .Select(a => a.Id)
+        .ToListAsync();
+
+    // Linked to a card? (skip)
+    var linkedIds = await db.PassBuyCards
+        .Where(c => pendingIds.Contains(EF.Property<int>(c, "ApplicationId")))
+        .Select(c => EF.Property<int>(c, "ApplicationId"))
+        .Distinct()
+        .ToListAsync();
+
+    var deletableIds = pendingIds.Except(linkedIds).ToList();
+
+    using var tx = await db.Database.BeginTransactionAsync();
+    try
+    {
+        var edus = await db.EducationDetails.Where(e => deletableIds.Contains(e.ApplicationId)).ToListAsync();
+        var trans = await db.TransportEmploymentDetails.Where(t => deletableIds.Contains(t.ApplicationId)).ToListAsync();
+        db.EducationDetails.RemoveRange(edus);
+        db.TransportEmploymentDetails.RemoveRange(trans);
+
+        var apps = await db.PassBuyCardApplications.Where(a => deletableIds.Contains(a.Id)).ToListAsync();
+        db.PassBuyCardApplications.RemoveRange(apps);
+
+        await db.SaveChangesAsync();
+        await tx.CommitAsync();
+
+        Console.WriteLine($"✓ cleanup ok: apps={apps.Count}, details={edus.Count + trans.Count}, skipped={linkedIds.Count}");
+        return Results.Ok(new { deletedApplications = apps.Count, deletedDetails = edus.Count + trans.Count, skippedLinkedToCard = linkedIds.Count });
+    }
+    catch (Exception ex)
+    {
+        await tx.RollbackAsync();
+        Console.WriteLine($"✗ cleanup error: {ex.Message}");
+        return Results.Problem($"Failed to delete stale applications: {ex.Message}");
+    }
+});
+
+
+// Delete PassBuy card
+app.MapPost("/PassBuy/cards/{cardId:int}/delete", async (AppDbContext db, HttpContext context, int cardId) =>
+{
+    var authHeader = context.Request.Headers["Authorization"].ToString();
+    if (!authHeader.StartsWith("Bearer ")) return Results.Unauthorized();
+
+    var token = authHeader["Bearer ".Length..].Trim();
+    var principal = ValidateJwt.ValidateJwtToken(token, cfg);
+
+    var sub = principal.FindFirst(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Sub)?.Value;
+    if (!Guid.TryParse(sub, out var userId)) return Results.Unauthorized();
+
+    var card = await db.PassBuyCards
+        .Where(c => c.Id == cardId && c.UserId == userId)
+        .FirstOrDefaultAsync();
+
+    if (card is null) return Results.NotFound("Card not found");
+
+    db.PassBuyCards.Remove(card);
+    await db.SaveChangesAsync();
+
+    return Results.Ok(new { deleted = true, cardId });
+})
+.WithName("DeletePassBuyCard");
+
+
+// List education providers (id, name, eduCode)
+app.MapGet("/PassBuy/educationProviders", async (AppDbContext db) =>
+{
+    var list = await db.EducationProviders
+        .OrderBy(p => p.Name)
+        .Select(p => new { id = p.Id, name = p.Name, eduCode = p.EduCode })
+        .ToListAsync();
+    return Results.Ok(list);
+})
+.WithName("ListEducationProviders");
+
+
+// List transport employers (id, name)
+app.MapGet("/PassBuy/transportEmployers", async (AppDbContext db) =>
+{
+    var list = await db.TransportEmployers
+        .OrderBy(t => t.Name)
+        .Select(t => new { id = t.Id, name = t.Name })
+        .ToListAsync();
+    return Results.Ok(list);
+})
+.WithName("ListTransportEmployers");
+
 
 app.Run();

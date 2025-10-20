@@ -24,7 +24,7 @@ export default function SignUp({ onclick }: SignUpProps) {
     }
 
     try {
-      const response = await axios.post("http://localhost:5101/signUp", null, {
+      const response = await axios.post("http://localhost:5100/signUp", null, {
         params: {
           fname,
           lname,
